@@ -19,5 +19,6 @@ public class InfrastructureModuleInitializer : IModuleInitializer
         builder.Services.AddScoped<ISaleRepository, SaleRepository>();
         builder.Services.AddScoped<IDomainEventPublisher, OutboxDomainEventPublisher>();
         builder.Services.AddHostedService<OutboxDispatcherService>();
+        builder.Services.AddHostedService<OutboxCleanupService>();
     }
 }

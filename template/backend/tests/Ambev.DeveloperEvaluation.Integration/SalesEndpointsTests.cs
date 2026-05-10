@@ -162,7 +162,48 @@ public class SalesEndpointsTests : IClassFixture<SalesApiFactory>
         get!.Data.IsCancelled.Should().BeTrue();
     }
 
+    [Fact(DisplayName = "GET returns ETag and PUT with stale If-Match returns 412")]
+    public async Task UpdateSale_StaleIfMatch_Returns412()
+    {
+        var saleNumber = $"S-{Guid.NewGuid():N}";
+        var create = await _client.PostAsJsonAsync("/api/v1/sales", BuildPayload(saleNumber));
+        create.EnsureSuccessStatusCode();
+        var created = (await create.Content.ReadFromJsonAsync<EnvelopedSale>())!.Data;
+
+        // Read once to learn the current ETag.
+        var firstRead = await _client.GetAsync($"/api/v1/sales/{created.Id}");
+        firstRead.EnsureSuccessStatusCode();
+        var initialEtag = firstRead.Headers.ETag?.Tag;
+        initialEtag.Should().NotBeNullOrEmpty();
+
+        // Mutate the sale (PATCH /cancel), which advances xmin.
+        var cancel = await _client.PatchAsync($"/api/v1/sales/{created.Id}/cancel", content: null);
+        cancel.EnsureSuccessStatusCode();
+
+        // Try a PUT carrying the stale ETag — must be rejected.
+        var update = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/sales/{created.Id}")
+        {
+            Content = JsonContent.Create(new
+            {
+                SaleDate = DateTime.UtcNow,
+                CustomerId = Guid.NewGuid(),
+                CustomerName = "Updated",
+                BranchId = Guid.NewGuid(),
+                BranchName = "B",
+                Items = new[]
+                {
+                    new { ProductId = Guid.NewGuid(), ProductName = "P", Quantity = 1, UnitPrice = 1m }
+                }
+            })
+        };
+        update.Headers.TryAddWithoutValidation("If-Match", initialEtag);
+
+        var response = await _client.SendAsync(update);
+
+        response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+    }
+
     private sealed record EnvelopedSale(SalePayload Data);
 
-    private sealed record SalePayload(Guid Id, string SaleNumber, decimal TotalAmount, bool IsCancelled);
+    private sealed record SalePayload(Guid Id, string SaleNumber, decimal TotalAmount, bool IsCancelled, uint RowVersion);
 }
