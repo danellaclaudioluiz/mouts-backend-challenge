@@ -99,7 +99,9 @@ public class SaleRepository : ISaleRepository
         var size = filter.Size < 1 ? 10 : filter.Size;
 
         // Project directly to SaleSummary so EF emits a single SELECT against
-        // Sales (no JOIN to SaleItems) — list endpoints don't need item rows.
+        // Sales (no JOIN to SaleItems). ItemCount reads the
+        // ActiveItemsCount column maintained by the aggregate, so the page
+        // query no longer carries a correlated subquery per row.
         var items = await orderedQuery
             .Skip((page - 1) * size)
             .Take(size)
@@ -115,7 +117,7 @@ public class SaleRepository : ISaleRepository
                 s.IsCancelled,
                 s.CreatedAt,
                 s.UpdatedAt,
-                s.Items.Count(i => !i.IsCancelled)))
+                s.ActiveItemsCount))
             .ToListAsync(cancellationToken);
 
         return (items, totalCount);

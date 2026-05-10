@@ -26,6 +26,15 @@ public class Sale : BaseEntity
     public string BranchName { get; private set; } = string.Empty;
     public decimal TotalAmount { get; private set; }
     public bool IsCancelled { get; private set; }
+
+    /// <summary>
+    /// Cached number of non-cancelled items on this sale. Maintained by the
+    /// aggregate on every mutation so list-style queries can read the count
+    /// from the row instead of running a correlated subquery against
+    /// SaleItems for every page.
+    /// </summary>
+    public int ActiveItemsCount { get; private set; }
+
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
 
@@ -230,9 +239,9 @@ public class Sale : BaseEntity
 
     private void Recalculate()
     {
-        TotalAmount = _items
-            .Where(i => !i.IsCancelled)
-            .Sum(i => i.TotalAmount);
+        var activeItems = _items.Where(i => !i.IsCancelled).ToArray();
+        TotalAmount = activeItems.Sum(i => i.TotalAmount);
+        ActiveItemsCount = activeItems.Length;
     }
 
     private void Touch() => UpdatedAt = DateTime.UtcNow;
