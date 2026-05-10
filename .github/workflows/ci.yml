@@ -33,7 +33,6 @@ jobs:
 
       - name: Verify formatting
         run: dotnet format Ambev.DeveloperEvaluation.sln --verify-no-changes --no-restore --verbosity diagnostic
-        continue-on-error: true
 
       - name: Unit tests
         run: |
@@ -50,6 +49,14 @@ jobs:
         with:
           name: unit-test-results
           path: template/backend/TestResults
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: template/backend/TestResults/**/coverage.cobertura.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   integration-test:
     name: integration tests (Testcontainers)
