@@ -132,7 +132,22 @@ public class SaleRepository : ISaleRepository
             .Take(size))
             .ToListAsync(cancellationToken);
 
-        return new SalePage(items, totalCount, NextCursor: null);
+        // Hand back a cursor encoded from the last row of this page so a
+        // client that started in offset/page mode can transition to keyset
+        // (cursor) mode for subsequent pages — no need to recompute the
+        // offset on a moving dataset. Empty when there is no next page, or
+        // when a custom _order is in effect (the cursor predicate hardcodes
+        // SaleDate, so encoding by a different sort would be wrong).
+        string? nextCursor = null;
+        if (items.Count == size
+            && (long)page * size < totalCount
+            && string.IsNullOrWhiteSpace(filter.Order))
+        {
+            var last = items[^1];
+            nextCursor = SaleCursor.Encode(last.SaleDate, last.Id);
+        }
+
+        return new SalePage(items, totalCount, nextCursor);
     }
 
     private static async Task<SalePage> ListByCursorAsync(
