@@ -9,6 +9,7 @@ using Ambev.DeveloperEvaluation.WebApi.Middleware;
 using Asp.Versioning;
 using FluentValidation;
 using MediatR;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using OpenTelemetry.Metrics;
@@ -205,6 +206,19 @@ public class Program
             builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 
             var app = builder.Build();
+
+            // Honour X-Forwarded-For / X-Forwarded-Proto when behind a proxy
+            // or load balancer. Without this the rate limiter, logging, and
+            // CORS / scheme-aware redirects all see the proxy's IP instead
+            // of the caller's — so every tenant collapses into a single
+            // rate-limit bucket and a single IP in logs. KnownNetworks and
+            // KnownProxies stay empty by default; tighten via config in a
+            // hardened production deployment.
+            app.UseForwardedHeaders(new ForwardedHeadersOptions
+            {
+                ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+            });
+
             app.UseMiddleware<ValidationExceptionMiddleware>();
             app.UseMiddleware<IdempotencyMiddleware>();
 

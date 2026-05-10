@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
-using System;
 using System.Text;
 
 namespace Ambev.DeveloperEvaluation.Common.Security
@@ -15,6 +14,14 @@ namespace Ambev.DeveloperEvaluation.Common.Security
             ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
 
             var key = Encoding.UTF8.GetBytes(secretKey);
+
+            // Optional Jwt:Issuer / Jwt:Audience config. When set, the token
+            // must declare matching iss/aud claims — defends against a leaked
+            // signing key being reused to issue tokens for a different
+            // tenant or service. When unset (typical dev), only the signing
+            // key is validated.
+            var issuer = configuration["Jwt:Issuer"];
+            var audience = configuration["Jwt:Audience"];
 
             services.AddAuthentication(x =>
             {
@@ -29,8 +36,11 @@ namespace Ambev.DeveloperEvaluation.Common.Security
                 {
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey = new SymmetricSecurityKey(key),
-                    ValidateIssuer = false,
-                    ValidateAudience = false,
+                    ValidateIssuer = !string.IsNullOrWhiteSpace(issuer),
+                    ValidIssuer = issuer,
+                    ValidateAudience = !string.IsNullOrWhiteSpace(audience),
+                    ValidAudience = audience,
+                    ValidateLifetime = true,
                     ClockSkew = TimeSpan.Zero
                 };
             });
