@@ -205,5 +205,5 @@ public class SalesEndpointsTests : IClassFixture<SalesApiFactory>
 
     private sealed record EnvelopedSale(SalePayload Data);
 
-    private sealed record SalePayload(Guid Id, string SaleNumber, decimal TotalAmount, bool IsCancelled, uint RowVersion);
+    private sealed record SalePayload(Guid Id, string SaleNumber, decimal TotalAmount, bool IsCancelled, long RowVersion);
 }

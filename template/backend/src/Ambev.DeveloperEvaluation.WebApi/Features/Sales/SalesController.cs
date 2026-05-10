@@ -190,20 +190,20 @@ public class SalesController : BaseController
     }
 
     /// <summary>Encodes an aggregate's row version as a strong HTTP ETag.</summary>
-    private static string ETagFor(uint rowVersion) => $"\"{rowVersion:x}\"";
+    private static string ETagFor(long rowVersion) => $"\"{rowVersion:x}\"";
 
     /// <summary>
     /// Parses an If-Match header into a row version. Returns null if the
     /// header is absent, "*" (any) or unparseable. The handler then skips the
     /// precondition; the caller has explicitly opted out of strict ordering.
     /// </summary>
-    private static uint? ParseIfMatch(Microsoft.Extensions.Primitives.StringValues header)
+    private static long? ParseIfMatch(Microsoft.Extensions.Primitives.StringValues header)
     {
         var value = header.ToString();
         if (string.IsNullOrWhiteSpace(value) || value == "*") return null;
 
         var trimmed = value.Trim().Trim('"');
-        return uint.TryParse(trimmed, System.Globalization.NumberStyles.HexNumber,
+        return long.TryParse(trimmed, System.Globalization.NumberStyles.HexNumber,
             System.Globalization.CultureInfo.InvariantCulture, out var version)
             ? version
             : null;

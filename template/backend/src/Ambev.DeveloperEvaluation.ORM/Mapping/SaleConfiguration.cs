@@ -51,14 +51,15 @@ public class SaleConfiguration : IEntityTypeConfiguration<Sale>
             .HasDatabaseName("IX_Sales_SaleDate_Cancelled")
             .HasFilter("\"IsCancelled\" = true");
 
-        // Optimistic concurrency via Postgres xmin (transaction id of last
-        // update). Mapped to the public Sale.RowVersion so the value is visible
-        // to handlers and to API clients (which can derive an HTTP ETag from
-        // it for If-Match preconditions). EF Core raises
-        // DbUpdateConcurrencyException on stale writes.
+        // Optimistic concurrency via a bigint maintained by a Postgres
+        // BEFORE UPDATE trigger (see migration BigintRowVersionTrigger).
+        // EF treats the column as generated-on-add-or-update so it issues
+        // the WHERE RowVersion = @oldVersion clause but does not include
+        // it in the SET, and reads the new value back via RETURNING. xmin
+        // would have done the same job but is reset by VACUUM FREEZE.
         builder.Property(s => s.RowVersion)
-            .HasColumnName("xmin")
-            .HasColumnType("xid")
+            .HasColumnType("bigint")
+            .HasDefaultValue(0L)
             .ValueGeneratedOnAddOrUpdate()
             .IsConcurrencyToken();
 

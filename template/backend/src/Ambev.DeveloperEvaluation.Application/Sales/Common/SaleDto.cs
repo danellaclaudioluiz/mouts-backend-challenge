@@ -16,6 +16,6 @@ public class SaleDto
     public bool IsCancelled { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
-    public uint RowVersion { get; set; }
+    public long RowVersion { get; set; }
     public List<SaleItemDto> Items { get; set; } = new();
 }

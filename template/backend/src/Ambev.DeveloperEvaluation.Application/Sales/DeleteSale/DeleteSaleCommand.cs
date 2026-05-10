@@ -7,11 +7,11 @@ public class DeleteSaleCommand : IRequest<Unit>
     public Guid Id { get; set; }
 
     /// <summary>Optional If-Match precondition (see UpdateSaleCommand).</summary>
-    public uint? ExpectedRowVersion { get; set; }
+    public long? ExpectedRowVersion { get; set; }
 
     public DeleteSaleCommand() { }
     public DeleteSaleCommand(Guid id) => Id = id;
-    public DeleteSaleCommand(Guid id, uint? expectedRowVersion)
+    public DeleteSaleCommand(Guid id, long? expectedRowVersion)
     {
         Id = id;
         ExpectedRowVersion = expectedRowVersion;

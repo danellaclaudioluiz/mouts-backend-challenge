@@ -25,5 +25,5 @@ public class UpdateSaleCommand : IRequest<SaleDto>
     /// RowVersion is different — explicit optimistic concurrency control at
     /// the request boundary, before any state mutates.
     /// </summary>
-    public uint? ExpectedRowVersion { get; set; }
+    public long? ExpectedRowVersion { get; set; }
 }

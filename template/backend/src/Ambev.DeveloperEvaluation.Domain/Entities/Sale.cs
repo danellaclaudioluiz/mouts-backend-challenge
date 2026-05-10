@@ -39,11 +39,19 @@ public class Sale : BaseEntity
     public DateTime? UpdatedAt { get; private set; }
 
     /// <summary>
-    /// Optimistic concurrency token (Postgres <c>xmin</c>). Increments on every
-    /// row update; clients can derive an HTTP ETag from it for If-Match
+    /// Optimistic concurrency token. A <c>bigint</c> column maintained by a
+    /// Postgres BEFORE UPDATE trigger that increments the value on every row
+    /// update. Clients can derive an HTTP ETag from it for If-Match
     /// preconditions on PUT/DELETE.
     /// </summary>
-    public uint RowVersion { get; private set; }
+    /// <remarks>
+    /// Was previously mapped to Postgres <c>xmin</c>. xmin gets reset by
+    /// VACUUM FREEZE (when age(xmin) crosses vacuum_freeze_table_age, default
+    /// 150M txns) — a rare but catastrophic event that would invalidate
+    /// every cached ETag at once. The trigger-managed bigint is monotonic
+    /// across the row's lifetime and is not affected by FREEZE.
+    /// </remarks>
+    public long RowVersion { get; private set; }
 
     public IReadOnlyCollection<SaleItem> Items => _items.AsReadOnly();
     public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
