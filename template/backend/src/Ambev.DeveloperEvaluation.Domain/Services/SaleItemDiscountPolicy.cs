@@ -15,7 +15,7 @@ namespace Ambev.DeveloperEvaluation.Domain.Services;
 public static class SaleItemDiscountPolicy
 {
     public const int MaxQuantityPerProduct = 20;
-    public const int FivePercentTierMinQuantity = 4;
+    public const int TenPercentTierMinQuantity = 4;
     public const int TwentyPercentTierMinQuantity = 10;
 
     /// <summary>
@@ -48,7 +48,7 @@ public static class SaleItemDiscountPolicy
     private static decimal DiscountRateFor(int quantity) => quantity switch
     {
         >= TwentyPercentTierMinQuantity => 0.20m,
-        >= FivePercentTierMinQuantity => 0.10m,
+        >= TenPercentTierMinQuantity => 0.10m,
         _ => 0m
     };
 }
