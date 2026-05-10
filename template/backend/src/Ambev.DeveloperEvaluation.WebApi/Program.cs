@@ -26,6 +26,7 @@ public class Program
 
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
+            builder.Services.AddMemoryCache();
 
             builder.AddBasicHealthChecks();
 
@@ -77,6 +78,7 @@ public class Program
 
             var app = builder.Build();
             app.UseMiddleware<ValidationExceptionMiddleware>();
+            app.UseMiddleware<IdempotencyMiddleware>();
 
             if (app.Environment.IsDevelopment())
             {
