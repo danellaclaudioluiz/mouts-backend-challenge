@@ -82,7 +82,14 @@ public class SalesApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = _postgres.GetConnectionString(),
-                ["Jwt:SecretKey"] = "integration-tests-jwt-secret-must-be-at-least-32-bytes-long"
+                ["Jwt:SecretKey"] = "integration-tests-jwt-secret-must-be-at-least-32-bytes-long",
+                // Keep the rate limit out of the way of the broad integration
+                // suite: hundreds of requests fired against loopback within a
+                // single minute would otherwise share one partition and trip
+                // the 100-rpm default. Tests that specifically exercise the
+                // limiter spin up their own factory with a tighter PermitLimit.
+                ["RateLimit:PermitLimit"] = "10000",
+                ["RateLimit:WindowSeconds"] = "60"
             });
         });
 
