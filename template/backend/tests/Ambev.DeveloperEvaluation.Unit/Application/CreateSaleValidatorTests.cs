@@ -87,7 +87,11 @@ public class CreateSaleValidatorTests
     public void FutureSaleDate_Fails()
     {
         var cmd = ValidCommand();
-        cmd.SaleDate = DateTime.UtcNow.AddYears(1);
+        // Anchored to a fixed far-future date so the test still asserts a
+        // real violation after the rule evolves (e.g. "up to 2 years"); a
+        // moving DateTime.UtcNow.AddYears(1) would silently become a no-op
+        // once the rule's window grew past it.
+        cmd.SaleDate = new DateTime(2099, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
         _validator.TestValidate(cmd)
             .ShouldHaveValidationErrorFor(c => c.SaleDate);
