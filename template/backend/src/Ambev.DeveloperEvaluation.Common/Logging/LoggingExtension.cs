@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Core;
+using Serilog.Enrichers.Span;
 using Serilog.Events;
 using Serilog.Exceptions;
 using Serilog.Exceptions.Core;
@@ -61,26 +62,32 @@ public static class LoggingExtension
                 .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
                 .Enrich.WithProperty("Application", builder.Environment.ApplicationName)
                 .Enrich.FromLogContext()
+                // Pull TraceId and SpanId from the ambient OpenTelemetry Activity
+                // so log lines join their traces in Tempo / Jaeger / Datadog
+                // without manual correlation ids.
+                .Enrich.WithSpan()
                 .Enrich.WithExceptionDetails(_destructuringOptionsBuilder)
                 .Filter.ByExcluding(_filterPredicate);
+
+            const string OutputTemplate =
+                "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] " +
+                "trace={TraceId} span={SpanId} {SourceContext} {Message:lj}{NewLine}{Exception}";
 
             if (Debugger.IsAttached)
             {
                 loggerConfiguration.Enrich.WithProperty("DebuggerAttached", Debugger.IsAttached);
-                loggerConfiguration.WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}", theme: SystemConsoleTheme.Colored);
+                loggerConfiguration.WriteTo.Console(
+                    outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] trace={TraceId} [{SourceContext}] {Message:lj}{NewLine}{Exception}",
+                    theme: SystemConsoleTheme.Colored);
             }
             else
             {
                 loggerConfiguration
-                    .WriteTo.Console
-                    (
-                        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}"
-                    )
+                    .WriteTo.Console(outputTemplate: OutputTemplate)
                     .WriteTo.File(
                         "logs/log-.txt",
                         rollingInterval: RollingInterval.Day,
-                        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}"
-                    );
+                        outputTemplate: OutputTemplate);
             }
         });
 
