@@ -11,7 +11,6 @@ public class SaleConfiguration : IEntityTypeConfiguration<Sale>
         builder.ToTable("Sales");
 
         builder.HasKey(s => s.Id);
-        builder.Property(s => s.Id).HasColumnType("uuid").HasDefaultValueSql("gen_random_uuid()");
 
         builder.Property(s => s.SaleNumber).IsRequired().HasMaxLength(50);
         builder.HasIndex(s => s.SaleNumber).IsUnique();
@@ -31,6 +30,15 @@ public class SaleConfiguration : IEntityTypeConfiguration<Sale>
         builder.Property(s => s.IsCancelled).IsRequired();
         builder.Property(s => s.CreatedAt).IsRequired();
         builder.Property(s => s.UpdatedAt);
+
+        // Optimistic concurrency via Postgres xmin (transaction id of last update).
+        // Free of schema cost — every row already has it — and EF Core treats it
+        // as a concurrency token, raising DbUpdateConcurrencyException on stale
+        // writes. Maps as a shadow property so Sale stays infra-agnostic.
+        builder.Property<uint>("xmin")
+            .HasColumnType("xid")
+            .ValueGeneratedOnAddOrUpdate()
+            .IsConcurrencyToken();
 
         builder.HasMany(s => s.Items)
             .WithOne()
