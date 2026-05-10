@@ -3,15 +3,19 @@ using System.Security.Claims;
 
 namespace Ambev.DeveloperEvaluation.WebApi.Common;
 
-[Route("api/[controller]")]
-[ApiController]
 public class BaseController : ControllerBase
 {
-    protected int GetCurrentUserId() =>
-            int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? throw new NullReferenceException());
+    protected Guid GetCurrentUserId()
+    {
+        var raw = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(raw, out var id))
+            throw new UnauthorizedAccessException("Authenticated user id is missing or not a valid GUID.");
+        return id;
+    }
 
     protected string GetCurrentUserEmail() =>
-        User.FindFirst(ClaimTypes.Email)?.Value ?? throw new NullReferenceException();
+        User.FindFirst(ClaimTypes.Email)?.Value
+            ?? throw new UnauthorizedAccessException("Authenticated user email claim is missing.");
 
     protected IActionResult Ok<T>(T data) =>
             base.Ok(new ApiResponseWithData<T> { Data = data, Success = true });
