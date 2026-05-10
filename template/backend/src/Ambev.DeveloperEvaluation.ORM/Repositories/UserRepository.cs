@@ -52,7 +52,12 @@ public class UserRepository : IUserRepository
     /// <returns>The user if found, null otherwise</returns>
     public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
+        // Read-only: every caller (AuthenticateUserHandler, CreateUser
+        // pre-check) inspects the row but never mutates it. AsNoTracking
+        // drops the change-tracker snapshot — meaningful CPU win on the
+        // hottest read path in the system.
         return await _context.Users
+            .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
     }
 
