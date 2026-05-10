@@ -316,7 +316,34 @@ dotnet test
   end-to-end via `WebApplicationFactory` against a real Postgres running
   in a [Testcontainers](https://dotnet.testcontainers.org/) container.
   **Requires a working Docker daemon.** Boots once per fixture; tests
-  share the container.
+  share the container and reset per-test via `TRUNCATE … RESTART
+  IDENTITY CASCADE` so each `[Fact]` starts from a known-empty schema.
+
+#### Integration test coverage matrix
+
+| Area | File | What it asserts |
+|---|---|---|
+| Happy paths + ETag/Location | `SalesEndpointsTests.cs` | POST returns 201 + `Location` + `ETag`, GET returns 404 problem details, validation errors return 400 problem details, PATCH `/cancel` toggles `IsCancelled` + writes a `sale.cancelled.v1` outbox row, stale `If-Match` returns 412 |
+| Idempotency-Key | `SalesEndpointsTests.cs` | Replay returns cached 201 byte-equal to the original, different body returns 422, whitespace + key-order variants share the canonical hash, 4xx responses are not cached, key > 256 chars returns 400 |
+| Concurrency races | `ConcurrencyTests.cs` | Two PUTs with the same stale `If-Match` → exactly one 200 + one 412/409 and the DB reflects the winner only; 5 concurrent POSTs with the same `Idempotency-Key` → exactly one `Sales` row regardless of inflight-lock outcome |
+| Update | `UpdateSaleEndpointTests.cs` | Happy path + diff-style update keeps stable item ids, update against a cancelled sale returns 400, unknown id returns 404 |
+| Delete | `DeleteSaleEndpointTests.cs` | Hard-delete cascades items, current `If-Match` succeeds, stale `If-Match` returns 412, unknown id returns 404 |
+| Cancel item | `CancelSaleItemEndpointTests.cs` | Item flagged cancelled + total recalculated, second cancel on same item is idempotent (no extra event), unknown sale → 404, unknown item → 400 |
+| List + pagination + filters | `ListSalesEndpointTests.cs` | Page/size paging, customer/branch/`isCancelled` filters, ordering, bad order key → 400, oversize page → 400, empty page is well-formed, keyset cursor mode, `_page` + `_cursor` together → 400 |
+| Boundaries | `BoundaryEndpointTests.cs` | Exactly `MaxItemsPerSale` (100) items accepted, 101 items → 400, duplicate `productId` across lines → 400 (cap cannot be split) |
+| Rate limit | `RateLimitEndpointTests.cs` | Dedicated factory with `RateLimit:PermitLimit=5`: bursts of requests beyond the permit return 429 |
+| Health | `HealthEndpointTests.cs` | `/health/live` returns Healthy, `/health/ready` includes the Postgres DB probe, `/health` returns the full report |
+| Outbox side-effects | `Helpers/OutboxAsserter.cs` | Read-only helper used across the suite to assert "the event was persisted in the same tx" without waiting on the dispatcher's polling clock |
+
+#### Unit test coverage matrix
+
+| Area | File | What it asserts |
+|---|---|---|
+| Discount policy tiers | `Domain/Services/SaleItemDiscountPolicyTests.cs` | Documented quantity tiers (0% / 10% / 20%), > 20 throws, non-positive qty/price throws, tier borders × awkward unit prices (0.01, 33.33, 999.99) match the rounding contract (AwayFromZero, 2 dp) |
+| Sale aggregate | `Domain/Entities/SaleTests.cs` | AddItem rejects duplicate product (any price/name), AddItem on cancelled sale throws, Cancel is idempotent + emits a single event, CancelItem recalculates total, unknown CancelItem throws, cancel-cancelled-item is a no-op, cancel on empty sale stays consistent, Cancel cascades to all active items |
+| Sale items | `Domain/Entities/SaleItemTests.cs` | Line total = `qty × price - discount` across every tier |
+| Validators | `Application/Sales/.../CreateSaleValidatorTests.cs` etc. | Required fields, length caps, date bounds, items-array cap |
+| Handlers | `Application/Sales/.../{UseCase}HandlerTests.cs` | Repository + event publisher are called with the right shape; duplicate `SaleNumber` raises `ConflictException`; missing aggregate raises `ResourceNotFoundException` |
 
 ### Continuous integration
 
