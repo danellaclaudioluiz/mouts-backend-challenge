@@ -45,10 +45,11 @@ public class ListSalesEndpointTests : IAsyncLifetime
         response!.Data.Should().HaveCount(2);
         response.TotalCount.Should().Be(3);
         response.TotalPages.Should().Be(2);
-        response.NextCursor.Should().BeNull("page mode does not emit a cursor");
+        response.NextCursor.Should().NotBeNullOrEmpty(
+            "page-1 of a multi-page result now hands back a keyset cursor so a client can transition to cursor mode for the next page without recomputing offsets on a moving dataset");
     }
 
-    [Fact(DisplayName = "GET /api/v1/sales filters by customerId")]
+    [Fact(DisplayName = "GET /api/v1/sales filters by customerId — every returned row belongs to that customer")]
     public async Task List_FilterByCustomer()
     {
         var targetCustomer = Guid.NewGuid();
@@ -60,7 +61,8 @@ public class ListSalesEndpointTests : IAsyncLifetime
             $"/api/v1/sales?customerId={targetCustomer}");
 
         response!.Data.Should().HaveCount(2);
-        response.Data.Should().OnlyContain(s => s.SaleNumber.StartsWith("S-"));
+        response.Data.Should().OnlyContain(s => s.CustomerId == targetCustomer,
+            "the filter must restrict to that customer — a count-only check would pass even if the WHERE clause was dropped");
     }
 
     [Fact(DisplayName = "GET /api/v1/sales filters by isCancelled")]
@@ -110,44 +112,50 @@ public class ListSalesEndpointTests : IAsyncLifetime
         response.TotalCount.Should().Be(1);
     }
 
-    [Fact(DisplayName = "GET /api/v1/sales keyset cursor walks all pages with no TotalCount")]
+    [Fact(DisplayName = "GET /api/v1/sales keyset cursor walks all pages end-to-end and stops cleanly")]
     public async Task List_CursorMode_WalksAllPages()
     {
-        for (var i = 0; i < 5; i++)
-            await SeedSaleAsync($"S-{Guid.NewGuid():N}");
+        const int total = 5;
+        var seeded = new List<Guid>();
+        for (var i = 0; i < total; i++)
+            seeded.Add(await SeedSaleAsync($"S-{Guid.NewGuid():N}"));
 
+        // First call: page-1 keyset (no _page, no _cursor). The handler
+        // returns a NextCursor we then walk forward with.
+        var collected = new List<Guid>();
         var firstPage = await _client.GetFromJsonAsync<EnvelopedList>(
             "/api/v1/sales?_size=2");
-        firstPage!.Data.Should().HaveCount(2);
-        firstPage.TotalCount.Should().Be(5, "page mode should still report the total");
+        firstPage.Should().NotBeNull();
+        firstPage!.Data.Should().HaveCount(2,
+            "the first page must come back full when there are more rows than the page size");
+        firstPage.NextCursor.Should().NotBeNullOrEmpty(
+            "the API must hand back a cursor whenever there is a next page in keyset mode");
+        collected.AddRange(firstPage.Data.Select(s => s.Id));
 
-        // Switch to cursor mode using the cursor of the last item we saw —
-        // pretend that's what a client does to walk forward at scale.
-        var allSeen = new List<Guid>(firstPage.Data.Select(s => s.Id));
+        // Walk forward using the cursor until the API stops returning one.
+        var cursor = firstPage.NextCursor;
+        var safety = 0;
+        while (!string.IsNullOrEmpty(cursor))
+        {
+            safety++.Should().BeLessThan(10, "the walk must terminate — otherwise the cursor loops");
 
-        // Use the new cursor mode: pass _cursor (synthesised), _size=2 — no _page.
-        // Since we just received TWO items from page 1, build a cursor from the
-        // last one's RowVersion-free pair by issuing a fresh keyset GET from
-        // the start (Page is implicit 1).
-        var keysetPage1 = await _client.GetFromJsonAsync<EnvelopedList>(
-            "/api/v1/sales?_size=2&_cursor=");  // empty cursor falls back to page mode
-        // (the empty-cursor path is not really supported; instead, drive the
-        // cursor flow end-to-end starting from page-1 keyset)
+            var next = await _client.GetFromJsonAsync<EnvelopedList>(
+                $"/api/v1/sales?_size=2&_cursor={Uri.EscapeDataString(cursor!)}");
+            next!.TotalCount.Should().BeNull(
+                "cursor mode skips the COUNT(*) — TotalCount must be omitted, not zero-defaulted");
 
-        // Drive keyset mode from page-1 with an "unbounded" first call: just
-        // _size=2, no _page, no _cursor. The repo currently defaults to page
-        // mode when there's no cursor, so we accept that the first call uses
-        // page-1; from there onwards we use the cursor.
-        var keyset1 = await _client.GetFromJsonAsync<EnvelopedList>(
-            "/api/v1/sales?_size=2");
-        keyset1!.Data.Should().HaveCount(2);
+            collected.AddRange(next.Data.Select(s => s.Id));
+            cursor = next.NextCursor;
 
-        // Issue a follow-up using _page=2 (since we don't have a cursor yet).
-        var page2 = await _client.GetFromJsonAsync<EnvelopedList>(
-            "/api/v1/sales?_page=2&_size=2");
-        page2!.Data.Should().HaveCount(2);
-        page2.Data.Select(s => s.Id).Should().NotIntersectWith(keyset1.Data.Select(s => s.Id),
-            "page 2 must not duplicate page 1");
+            // The page after the last must come back empty AND with no
+            // further cursor.
+            if (next.Data.Count == 0)
+                next.NextCursor.Should().BeNullOrEmpty("the API must stop emitting cursors once the last row was already returned");
+        }
+
+        // Every row was visited exactly once.
+        collected.Should().BeEquivalentTo(seeded);
+        collected.Should().OnlyHaveUniqueItems("the cursor walk must not yield the same row twice");
     }
 
     [Fact(DisplayName = "GET /api/v1/sales rejects combining _page and _cursor")]

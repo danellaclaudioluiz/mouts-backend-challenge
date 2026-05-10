@@ -92,6 +92,8 @@ public sealed record EnvelopedSale(SalePayload Data);
 public sealed record SalePayload(
     Guid Id,
     string SaleNumber,
+    Guid CustomerId,
+    Guid BranchId,
     decimal TotalAmount,
     bool IsCancelled,
     long RowVersion,
