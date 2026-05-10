@@ -25,6 +25,9 @@ public class CreateSaleValidator : AbstractValidator<CreateSaleCommand>
         RuleFor(c => c.BranchName).NotEmpty().MaximumLength(200);
 
         RuleFor(c => c.Items).NotEmpty().WithMessage("Sale must have at least one item.");
+        RuleFor(c => c.Items)
+            .Must(items => items == null || items.Count <= SaleItemDiscountPolicy.MaxItemsPerSale)
+            .WithMessage($"Sale cannot have more than {SaleItemDiscountPolicy.MaxItemsPerSale} items.");
         RuleForEach(c => c.Items).SetValidator(new CreateSaleItemDtoValidator());
     }
 }

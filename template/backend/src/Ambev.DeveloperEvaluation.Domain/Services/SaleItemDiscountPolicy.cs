@@ -19,6 +19,14 @@ public static class SaleItemDiscountPolicy
     public const int TwentyPercentTierMinQuantity = 10;
 
     /// <summary>
+    /// Upper bound on the number of distinct line items a single sale may
+    /// carry. Bounds the request payload so a malicious or bug-ridden caller
+    /// cannot push a multi-MB JSON body through the API surface — and bounds
+    /// the resulting transaction's row count for predictable write latency.
+    /// </summary>
+    public const int MaxItemsPerSale = 100;
+
+    /// <summary>
     /// Computes the discount amount and the resulting line total for a given
     /// quantity and unit price.
     /// </summary>
