@@ -162,4 +162,18 @@ public class AbuseEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
             "the {id:guid} route constraint must reject malformed identifiers before they reach the controller");
     }
+
+    [Fact(DisplayName = "GET /api/v2/sales/{id} (no v2 controller) returns 400 or 404 — must not 500")]
+    public async Task GetSale_UnknownApiVersion_RejectedCleanly()
+    {
+        var response = await _client.GetAsync($"/api/v2/sales/{Guid.NewGuid()}");
+
+        // No SalesController has [ApiVersion("2.0")] yet — the
+        // version-aware router must surface this as a 400 (UnsupportedApiVersion
+        // — Asp.Versioning's default) and not silently fall through to a 500
+        // or to the v1 controller.
+        var status = (int)response.StatusCode;
+        status.Should().Match(s => s == 400 || s == 404,
+            $"an unknown API version must be a deterministic client error — never a 500 (got {status})");
+    }
 }
