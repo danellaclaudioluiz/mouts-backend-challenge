@@ -12,6 +12,7 @@ using MediatR;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -111,6 +112,16 @@ public class Program
                         });
                 });
             });
+
+            // BackgroundServices (OutboxDispatcherService, OutboxCleanupService,
+            // OutboxNotifyListener) talk to Postgres. If the DB drops, an
+            // unhandled exception in any of them would (under .NET 6+ defaults)
+            // tear down the whole host — taking the API and the readiness
+            // probe down with it. Switch to Ignore so the host stays up; the
+            // dispatcher's own catch-and-log loop reports the outage instead,
+            // and /health/ready surfaces it via AddDbContextCheck.
+            builder.Services.Configure<HostOptions>(o =>
+                o.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
 
             builder.AddBasicHealthChecks();
 
