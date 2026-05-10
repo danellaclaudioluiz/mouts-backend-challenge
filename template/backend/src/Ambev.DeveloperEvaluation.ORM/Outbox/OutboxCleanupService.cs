@@ -19,8 +19,14 @@ namespace Ambev.DeveloperEvaluation.ORM.Outbox;
 public class OutboxCleanupService : BackgroundService
 {
     private static readonly TimeSpan RunInterval = TimeSpan.FromHours(1);
-    private static readonly TimeSpan StartupJitter = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan Retention = TimeSpan.FromDays(30);
+
+    // Lower/upper bound (in seconds) for the randomised startup jitter. A
+    // fixed 1-minute delay would line every replica up on the same hourly
+    // tick when they boot together; randomising spreads cleanup work across
+    // a 4-minute window so the I/O burst is decorrelated.
+    private const int JitterMinSeconds = 60;
+    private const int JitterMaxSeconds = 300;
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OutboxCleanupService> _logger;
@@ -35,13 +41,15 @@ public class OutboxCleanupService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var jitter = TimeSpan.FromSeconds(Random.Shared.Next(JitterMinSeconds, JitterMaxSeconds));
+
         _logger.LogInformation(
-            "Outbox cleanup started; deletes processed rows older than {Retention} every {Interval}",
-            Retention, RunInterval);
+            "Outbox cleanup started; deletes processed rows older than {Retention} every {Interval} (initial jitter {Jitter})",
+            Retention, RunInterval, jitter);
 
         try
         {
-            await Task.Delay(StartupJitter, stoppingToken);
+            await Task.Delay(jitter, stoppingToken);
         }
         catch (TaskCanceledException) { return; }
 
