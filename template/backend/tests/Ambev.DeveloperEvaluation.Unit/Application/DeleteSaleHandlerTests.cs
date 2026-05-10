@@ -1,3 +1,4 @@
+using Ambev.DeveloperEvaluation.Application.Sales.Common;
 using Ambev.DeveloperEvaluation.Application.Sales.DeleteSale;
 using Ambev.DeveloperEvaluation.Domain.Exceptions;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
@@ -10,11 +11,12 @@ namespace Ambev.DeveloperEvaluation.Unit.Application;
 public class DeleteSaleHandlerTests
 {
     private readonly ISaleRepository _saleRepository = Substitute.For<ISaleRepository>();
+    private readonly ISaleReadCache _cache = Substitute.For<ISaleReadCache>();
     private readonly DeleteSaleHandler _handler;
 
     public DeleteSaleHandlerTests()
     {
-        _handler = new DeleteSaleHandler(_saleRepository);
+        _handler = new DeleteSaleHandler(_saleRepository, _cache);
     }
 
     [Fact(DisplayName = "Existing sale is removed")]

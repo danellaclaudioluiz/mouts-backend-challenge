@@ -16,12 +16,13 @@ public class UpdateSaleHandlerTests
 {
     private readonly ISaleRepository _saleRepository = Substitute.For<ISaleRepository>();
     private readonly IDomainEventPublisher _eventPublisher = Substitute.For<IDomainEventPublisher>();
+    private readonly ISaleReadCache _cache = Substitute.For<ISaleReadCache>();
     private readonly IMapper _mapper = Substitute.For<IMapper>();
     private readonly UpdateSaleHandler _handler;
 
     public UpdateSaleHandlerTests()
     {
-        _handler = new UpdateSaleHandler(_saleRepository, _eventPublisher, _mapper);
+        _handler = new UpdateSaleHandler(_saleRepository, _eventPublisher, _cache, _mapper);
         _mapper.Map<SaleDto>(Arg.Any<Sale>())
             .Returns(callInfo => new SaleDto { Id = callInfo.Arg<Sale>().Id });
     }

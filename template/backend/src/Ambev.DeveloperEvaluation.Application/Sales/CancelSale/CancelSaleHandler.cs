@@ -16,15 +16,18 @@ public class CancelSaleHandler : IRequestHandler<CancelSaleCommand, SaleDto>
 {
     private readonly ISaleRepository _saleRepository;
     private readonly IDomainEventPublisher _eventPublisher;
+    private readonly ISaleReadCache _cache;
     private readonly IMapper _mapper;
 
     public CancelSaleHandler(
         ISaleRepository saleRepository,
         IDomainEventPublisher eventPublisher,
+        ISaleReadCache cache,
         IMapper mapper)
     {
         _saleRepository = saleRepository;
         _eventPublisher = eventPublisher;
+        _cache = cache;
         _mapper = mapper;
     }
 
@@ -42,6 +45,7 @@ public class CancelSaleHandler : IRequestHandler<CancelSaleCommand, SaleDto>
 
         await _saleRepository.UpdateAsync(sale, cancellationToken);
         sale.ClearDomainEvents();
+        await _cache.EvictAsync(sale.Id, cancellationToken);
 
         return _mapper.Map<SaleDto>(sale);
     }

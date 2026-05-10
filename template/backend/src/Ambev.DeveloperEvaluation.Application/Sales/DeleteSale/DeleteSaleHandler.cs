@@ -1,3 +1,4 @@
+using Ambev.DeveloperEvaluation.Application.Sales.Common;
 using Ambev.DeveloperEvaluation.Domain.Exceptions;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
 using MediatR;
@@ -11,10 +12,12 @@ namespace Ambev.DeveloperEvaluation.Application.Sales.DeleteSale;
 public class DeleteSaleHandler : IRequestHandler<DeleteSaleCommand, Unit>
 {
     private readonly ISaleRepository _saleRepository;
+    private readonly ISaleReadCache _cache;
 
-    public DeleteSaleHandler(ISaleRepository saleRepository)
+    public DeleteSaleHandler(ISaleRepository saleRepository, ISaleReadCache cache)
     {
         _saleRepository = saleRepository;
+        _cache = cache;
     }
 
     public async Task<Unit> Handle(DeleteSaleCommand command, CancellationToken cancellationToken)
@@ -34,6 +37,7 @@ public class DeleteSaleHandler : IRequestHandler<DeleteSaleCommand, Unit>
         if (!deleted)
             throw new ResourceNotFoundException("Sale", command.Id);
 
+        await _cache.EvictAsync(command.Id, cancellationToken);
         return Unit.Value;
     }
 }
