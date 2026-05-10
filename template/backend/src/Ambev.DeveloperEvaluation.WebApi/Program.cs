@@ -86,6 +86,11 @@ public class Program
             // Partition by authenticated user first so corporate clients sharing
             // a NAT IP do not throttle each other; fall back to remote IP for
             // anonymous traffic. Lower the limit per-route via additional policies.
+            // Permit limit and window are configurable so tests (and ops) can
+            // tune them without a redeploy — RateLimit:PermitLimit defaults to
+            // 100 requests per RateLimit:WindowSeconds (default 60s).
+            var permitLimit = builder.Configuration.GetValue<int?>("RateLimit:PermitLimit") ?? 100;
+            var windowSeconds = builder.Configuration.GetValue<int?>("RateLimit:WindowSeconds") ?? 60;
             builder.Services.AddRateLimiter(options =>
             {
                 options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -100,8 +105,8 @@ public class Program
                         partitionKey,
                         _ => new FixedWindowRateLimiterOptions
                         {
-                            PermitLimit = 100,
-                            Window = TimeSpan.FromMinutes(1),
+                            PermitLimit = permitLimit,
+                            Window = TimeSpan.FromSeconds(windowSeconds),
                             QueueLimit = 0
                         });
                 });
