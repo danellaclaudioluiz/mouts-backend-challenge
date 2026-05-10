@@ -72,19 +72,53 @@ public class OutboxCleanupService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Maximum number of rows deleted per chunk. Bounded chunks keep each
+    /// transaction short so the table-level lock doesn't block writes,
+    /// autovacuum can keep up, and WAL doesn't explode in a single batch.
+    /// </summary>
+    private const int ChunkSize = 5000;
+
+    /// <summary>
+    /// Hard cap on the loop so a single cleanup tick can't run forever in
+    /// pathological backlogs. The next hourly tick picks up the leftover.
+    /// </summary>
+    private const int MaxChunksPerRun = 200;
+
     private async Task CleanupAsync(CancellationToken cancellationToken)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<DefaultContext>();
 
         var cutoff = DateTime.UtcNow - Retention;
-        var deleted = await context.OutboxMessages
-            .Where(m => m.ProcessedAt != null && m.ProcessedAt < cutoff)
-            .ExecuteDeleteAsync(cancellationToken);
+        var totalDeleted = 0;
 
-        if (deleted > 0)
+        // Chunked DELETE — each round drops at most ChunkSize rows in its own
+        // short transaction, so we never hold the table lock long enough to
+        // slow autovacuum or balloon WAL.
+        for (var i = 0; i < MaxChunksPerRun && !cancellationToken.IsCancellationRequested; i++)
+        {
+            const string sql = @"
+                DELETE FROM ""OutboxMessages""
+                WHERE ctid IN (
+                    SELECT ctid FROM ""OutboxMessages""
+                    WHERE ""ProcessedAt"" IS NOT NULL AND ""ProcessedAt"" < {0}
+                    LIMIT {1}
+                );";
+
+            var deleted = await context.Database.ExecuteSqlRawAsync(
+                sql,
+                new object[] { cutoff, ChunkSize },
+                cancellationToken);
+
+            if (deleted == 0) break;
+
+            totalDeleted += deleted;
+        }
+
+        if (totalDeleted > 0)
             _logger.LogInformation(
                 "Outbox cleanup removed {Count} processed rows older than {Cutoff:o}",
-                deleted, cutoff);
+                totalDeleted, cutoff);
     }
 }
