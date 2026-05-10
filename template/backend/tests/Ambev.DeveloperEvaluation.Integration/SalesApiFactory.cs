@@ -99,6 +99,17 @@ public class SalesApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         ");
     }
 
+    /// <summary>
+    /// Stops the underlying Postgres container without disposing the
+    /// factory. Used by the DB-degraded health-check test — the next
+    /// /health/ready probe must drop to 503. Pair every call with a
+    /// matching <see cref="StartDatabaseAsync"/> in a finally block, or
+    /// the rest of the suite will see a dead host.
+    /// </summary>
+    public Task StopDatabaseAsync() => _postgres.StopAsync();
+
+    public Task StartDatabaseAsync() => _postgres.StartAsync();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Test");
