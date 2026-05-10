@@ -9,10 +9,10 @@ using MediatR;
 namespace Ambev.DeveloperEvaluation.Application.Sales.UpdateSale;
 
 /// <summary>
-/// Full-replace update: header fields are overwritten and the item set is
-/// rebuilt from scratch (existing items removed, then re-added from the
-/// command). Raises a single SaleModifiedEvent at the end so listeners see
-/// the post-mutation state.
+/// Update by diff: existing items matching a command line by ProductId are
+/// updated in place (preserving the SaleItem id so external integrations
+/// that reference it stay valid), command items with a new ProductId are
+/// added, and existing items missing from the command are removed.
 /// </summary>
 public class UpdateSaleHandler : IRequestHandler<UpdateSaleCommand, SaleDto>
 {
@@ -35,6 +35,8 @@ public class UpdateSaleHandler : IRequestHandler<UpdateSaleCommand, SaleDto>
         var sale = await _saleRepository.GetByIdAsync(command.Id, cancellationToken)
             ?? throw new ResourceNotFoundException("Sale", command.Id);
 
+        EnsureUniqueProductIds(command);
+
         sale.UpdateHeader(
             command.SaleDate,
             command.CustomerId,
@@ -42,18 +44,52 @@ public class UpdateSaleHandler : IRequestHandler<UpdateSaleCommand, SaleDto>
             command.BranchId,
             command.BranchName);
 
-        foreach (var existing in sale.Items.ToList())
-            sale.RemoveItem(existing.Id);
-
-        foreach (var item in command.Items)
-            sale.AddItem(item.ProductId, item.ProductName, item.Quantity, item.UnitPrice);
-
+        ApplyItemDiff(sale, command.Items);
         sale.MarkModified();
 
         await _saleRepository.UpdateAsync(sale, cancellationToken);
         await PublishAndClearEventsAsync(sale, cancellationToken);
 
         return _mapper.Map<SaleDto>(sale);
+    }
+
+    private static void EnsureUniqueProductIds(UpdateSaleCommand command)
+    {
+        var duplicate = command.Items
+            .GroupBy(i => i.ProductId)
+            .FirstOrDefault(g => g.Count() > 1);
+        if (duplicate is not null)
+            throw new DomainException(
+                $"Product '{duplicate.Key}' appears in the update payload more than once. " +
+                "Consolidate the lines before sending.");
+    }
+
+    private static void ApplyItemDiff(Sale sale, IReadOnlyList<CreateSale.CreateSaleItemDto> incoming)
+    {
+        var existingByProduct = sale.Items
+            .Where(i => !i.IsCancelled)
+            .ToDictionary(i => i.ProductId);
+
+        var incomingByProduct = incoming.ToDictionary(i => i.ProductId);
+
+        foreach (var existing in existingByProduct.Values)
+        {
+            if (incomingByProduct.ContainsKey(existing.ProductId))
+                continue;
+            sale.RemoveItem(existing.Id);
+        }
+
+        foreach (var item in incoming)
+        {
+            if (existingByProduct.TryGetValue(item.ProductId, out var existing))
+            {
+                sale.UpdateItem(existing.Id, item.ProductId, item.ProductName, item.Quantity, item.UnitPrice);
+            }
+            else
+            {
+                sale.AddItem(item.ProductId, item.ProductName, item.Quantity, item.UnitPrice);
+            }
+        }
     }
 
     private async Task PublishAndClearEventsAsync(Sale sale, CancellationToken cancellationToken)

@@ -136,6 +136,31 @@ public class Sale : BaseEntity
     }
 
     /// <summary>
+    /// Updates an existing item's quantity, unit price and product name in
+    /// place — preserves the item id so external integrations referencing
+    /// it stay valid across updates. The item is matched by id; the product
+    /// id is verified to prevent silently swapping the line's product.
+    /// </summary>
+    public SaleItem UpdateItem(Guid itemId, Guid productId, string productName, int quantity, decimal unitPrice)
+    {
+        EnsureNotCancelled();
+        var item = _items.FirstOrDefault(i => i.Id == itemId)
+            ?? throw new DomainException($"Item '{itemId}' is not part of sale '{SaleNumber}'.");
+
+        if (item.IsCancelled)
+            throw new DomainException($"Item '{itemId}' is cancelled and cannot be updated.");
+
+        if (item.ProductId != productId)
+            throw new DomainException(
+                $"Item '{itemId}' is for product '{item.ProductId}', cannot be retargeted to '{productId}'.");
+
+        item.Replace(productName, quantity, unitPrice);
+        Recalculate();
+        Touch();
+        return item;
+    }
+
+    /// <summary>
     /// Replaces header fields. Sale number cannot change after creation.
     /// </summary>
     public void UpdateHeader(

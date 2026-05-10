@@ -59,6 +59,16 @@ public class SaleItem : BaseEntity
         Recalculate();
     }
 
+    internal void Replace(string productName, int quantity, decimal unitPrice)
+    {
+        if (string.IsNullOrWhiteSpace(productName))
+            throw new DomainException("Sale item product name is required.");
+
+        ProductName = productName;
+        UnitPrice = unitPrice;
+        ChangeQuantity(quantity);
+    }
+
     internal void Cancel()
     {
         IsCancelled = true;
