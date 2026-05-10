@@ -9,6 +9,13 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories;
 /// </summary>
 public class UserRepository : IUserRepository
 {
+    // GetByEmailAsync is the hottest read in the whole app (every authn
+    // request goes through it). Compile the query once so the Expression
+    // tree is reflected at startup, not per call.
+    private static readonly Func<DefaultContext, string, Task<User?>> _getByEmailCompiled =
+        EF.CompileAsyncQuery((DefaultContext ctx, string email) =>
+            ctx.Users.AsNoTracking().FirstOrDefault(u => u.Email == email));
+
     private readonly DefaultContext _context;
 
     /// <summary>
@@ -50,15 +57,10 @@ public class UserRepository : IUserRepository
     /// <param name="email">The email address to search for</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The user if found, null otherwise</returns>
-    public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
+    public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
-        // Read-only: every caller (AuthenticateUserHandler, CreateUser
-        // pre-check) inspects the row but never mutates it. AsNoTracking
-        // drops the change-tracker snapshot — meaningful CPU win on the
-        // hottest read path in the system.
-        return await _context.Users
-            .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return _getByEmailCompiled(_context, email);
     }
 
     public Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken = default)

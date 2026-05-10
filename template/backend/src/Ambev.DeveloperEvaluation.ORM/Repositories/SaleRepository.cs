@@ -10,6 +10,16 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories;
 /// </summary>
 public class SaleRepository : ISaleRepository
 {
+    // GetByIdAsync is the hottest write-path read: every Update / Cancel /
+    // CancelItem hits it. Compiling the query once avoids EF Core's
+    // per-call Expression tree reflection and shaves measurable CPU on the
+    // critical path.
+    private static readonly Func<DefaultContext, Guid, Task<Sale?>> _getByIdCompiled =
+        EF.CompileAsyncQuery((DefaultContext ctx, Guid id) =>
+            ctx.Sales
+                .Include(s => s.Items)
+                .FirstOrDefault(s => s.Id == id));
+
     private readonly DefaultContext _context;
 
     public SaleRepository(DefaultContext context)
@@ -36,9 +46,8 @@ public class SaleRepository : ISaleRepository
 
     public Task<Sale?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return _context.Sales
-            .Include(s => s.Items)
-            .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return _getByIdCompiled(_context, id);
     }
 
     public Task<bool> SaleNumberExistsAsync(string saleNumber, CancellationToken cancellationToken = default)
