@@ -74,36 +74,24 @@ public static class HealthChecksExtension
     /// </example>
     public static void UseBasicHealthChecks(this WebApplication app)
     {
-        var livenessOptions = WriteHealtCheckRespose(app, "liveness");
-        app.UseHealthChecks("/health/live", livenessOptions);
-
-        var readinessOptions = WriteHealtCheckRespose(app, "readiness");
-        app.UseHealthChecks("/health/ready", readinessOptions);
-
-        var healthOptions = WriteHealtCheckRespose(app, string.Empty);
-        app.UseHealthChecks("/health", healthOptions);
+        // Tag-filtered probes for kubernetes-style readiness vs liveness:
+        // /health/live runs only the in-process check (matches "liveness")
+        // and /health/ready additionally hits the database and any other
+        // dependency tagged "readiness". /health is the catch-all that
+        // returns the full report for ad-hoc inspection.
+        app.MapHealthChecks("/health/live", BuildOptions(app, c => c.Tags.Contains("liveness")));
+        app.MapHealthChecks("/health/ready", BuildOptions(app, c => c.Tags.Contains("readiness")));
+        app.MapHealthChecks("/health", BuildOptions(app, _ => true));
 
         var logger = app.Services.GetRequiredService<ILogger<HealthCheckService>>();
-        logger.LogInformation("Health Check enabled at: '/health'");
+        logger.LogInformation("Health checks enabled at /health, /health/live and /health/ready");
     }
 
-    /// <summary>
-    /// Configures health check options for an ASP.NET Core web application.
-    /// </summary>
-    /// <param name="app">The web application instance.</param>
-    /// <param name="tag">The tag used to filter health checks.</param>
-    /// <returns>A configured HealthCheckOptions object.</returns>
-    /// <remarks>
-    /// This method configures the following options:
-    /// - Filters health checks based on the provided tag.
-    /// - Sets specific HTTP status codes for different health states.
-    /// - Configures a custom response writer that generates a JSON with detailed health status information.
-    /// </remarks>
-    private static HealthCheckOptions WriteHealtCheckRespose(this WebApplication app, string tag)
+    private static HealthCheckOptions BuildOptions(WebApplication app, Func<HealthCheckRegistration, bool> predicate)
     {
         var options = new HealthCheckOptions
         {
-            Predicate = (check) => check.Tags.Contains(tag),
+            Predicate = predicate,
             ResultStatusCodes =
             {
                 [HealthStatus.Healthy] = StatusCodes.Status200OK,

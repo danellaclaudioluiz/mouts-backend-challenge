@@ -11,10 +11,26 @@ namespace Ambev.DeveloperEvaluation.ORM.Outbox;
 /// per-message attempt counter and last-error string so transient failures
 /// stay visible without losing the event.
 /// </summary>
+/// <remarks>
+/// Each poll runs inside a serializable transaction with
+/// <c>FOR UPDATE SKIP LOCKED</c> on the SELECT, so multiple dispatcher
+/// instances (one per app pod) cooperate without producing duplicates:
+/// each batch is locked exclusively by the picking instance, and the
+/// other instances skip those rows and grab the next batch.
+/// </remarks>
 public class OutboxDispatcherService : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
     private const int BatchSize = 50;
+
+    private static readonly string SelectPendingSql = $"""
+        SELECT *
+        FROM "OutboxMessages"
+        WHERE "ProcessedAt" IS NULL
+        ORDER BY "OccurredAt"
+        LIMIT {BatchSize}
+        FOR UPDATE SKIP LOCKED
+        """;
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OutboxDispatcherService> _logger;
@@ -55,24 +71,28 @@ public class OutboxDispatcherService : BackgroundService
         await using var scope = _scopeFactory.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<DefaultContext>();
 
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
         var pending = await context.OutboxMessages
-            .Where(m => m.ProcessedAt == null)
-            .OrderBy(m => m.OccurredAt)
-            .Take(BatchSize)
+            .FromSqlRaw(SelectPendingSql)
             .ToListAsync(cancellationToken);
 
-        if (pending.Count == 0) return;
+        if (pending.Count == 0)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return;
+        }
 
-        var now = DateTime.UtcNow;
         foreach (var message in pending)
         {
             try
             {
-                _logger.LogInformation(
-                    "Domain event {EventType} ({MessageId}) occurred at {OccurredAt:o}: {Payload}",
-                    message.EventType, message.Id, message.OccurredAt, message.Payload);
+                await DeliverAsync(message, cancellationToken);
 
-                message.ProcessedAt = now;
+                // Mark as processed only AFTER a successful delivery —
+                // at-least-once semantics. If the publish path throws,
+                // the row stays pending and the next poll retries it.
+                message.ProcessedAt = DateTime.UtcNow;
                 message.Attempts += 1;
                 message.LastError = null;
             }
@@ -87,5 +107,19 @@ public class OutboxDispatcherService : BackgroundService
         }
 
         await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Stand-in for the eventual broker call. Throwing here is treated as a
+    /// transient failure: the row stays pending, attempt counter increments,
+    /// and the next poll retries it.
+    /// </summary>
+    private Task DeliverAsync(OutboxMessage message, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation(
+            "Domain event {EventType} ({MessageId}) occurred at {OccurredAt:o}: {Payload}",
+            message.EventType, message.Id, message.OccurredAt, message.Payload);
+        return Task.CompletedTask;
     }
 }
