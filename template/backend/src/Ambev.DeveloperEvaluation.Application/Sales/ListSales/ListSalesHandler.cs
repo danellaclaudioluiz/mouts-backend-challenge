@@ -41,7 +41,7 @@ public class ListSalesHandler : IRequestHandler<ListSalesQuery, ListSalesResult>
 
         return new ListSalesResult
         {
-            Items = sales.Select(s => _mapper.Map<SaleDto>(s)).ToList(),
+            Items = sales.Select(s => _mapper.Map<SaleSummaryDto>(s)).ToList(),
             TotalCount = totalCount,
             Page = query.Page,
             Size = query.Size

@@ -24,10 +24,10 @@ public interface ISaleRepository
 
     /// <summary>
     /// Lists sales matching the supplied filter, paged. Returns the page items
-    /// alongside the total matching row count for the caller to compute paging
-    /// metadata.
+    /// as header-only summaries (no SaleItem load) alongside the total matching
+    /// row count for the caller to compute paging metadata.
     /// </summary>
-    Task<(IReadOnlyList<Sale> Items, int TotalCount)> ListAsync(
+    Task<(IReadOnlyList<SaleSummary> Items, long TotalCount)> ListAsync(
         SaleListFilter filter,
         CancellationToken cancellationToken = default);
 }

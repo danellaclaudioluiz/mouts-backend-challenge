@@ -10,6 +10,16 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories;
 /// </summary>
 public class SaleRepository : ISaleRepository
 {
+    private static readonly IReadOnlyCollection<string> AllowedSortFields = new[]
+    {
+        nameof(Sale.SaleNumber),
+        nameof(Sale.SaleDate),
+        nameof(Sale.TotalAmount),
+        nameof(Sale.IsCancelled),
+        nameof(Sale.CreatedAt),
+        nameof(Sale.UpdatedAt)
+    };
+
     private readonly DefaultContext _context;
 
     public SaleRepository(DefaultContext context)
@@ -24,10 +34,14 @@ public class SaleRepository : ISaleRepository
         return sale;
     }
 
-    public async Task UpdateAsync(Sale sale, CancellationToken cancellationToken = default)
+    public Task UpdateAsync(Sale sale, CancellationToken cancellationToken = default)
     {
-        _context.Sales.Update(sale);
-        await _context.SaveChangesAsync(cancellationToken);
+        // The aggregate was loaded by GetByIdAsync, so EF Core is already
+        // tracking it and every item it owns. Calling Update() here would
+        // force every property to Modified and break orphan-removal of items
+        // that the handler removed via Sale.RemoveItem. Just SaveChanges and
+        // let the change tracker emit the right INSERT / UPDATE / DELETE set.
+        return _context.SaveChangesAsync(cancellationToken);
     }
 
     public Task<Sale?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -56,14 +70,11 @@ public class SaleRepository : ISaleRepository
         return true;
     }
 
-    public async Task<(IReadOnlyList<Sale> Items, int TotalCount)> ListAsync(
+    public async Task<(IReadOnlyList<SaleSummary> Items, long TotalCount)> ListAsync(
         SaleListFilter filter,
         CancellationToken cancellationToken = default)
     {
-        var query = _context.Sales
-            .Include(s => s.Items)
-            .AsNoTracking()
-            .AsQueryable();
+        var query = _context.Sales.AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(filter.SaleNumber))
         {
@@ -88,18 +99,33 @@ public class SaleRepository : ISaleRepository
         if (filter.IsCancelled.HasValue)
             query = query.Where(s => s.IsCancelled == filter.IsCancelled.Value);
 
-        var totalCount = await query.CountAsync(cancellationToken);
+        var totalCount = await query.LongCountAsync(cancellationToken);
 
         var orderedQuery = string.IsNullOrWhiteSpace(filter.Order)
             ? query.OrderByDescending(s => s.SaleDate)
-            : query.OrderByDynamic(filter.Order);
+            : query.OrderByDynamic(filter.Order, AllowedSortFields);
 
         var page = filter.Page < 1 ? 1 : filter.Page;
         var size = filter.Size < 1 ? 10 : filter.Size;
 
+        // Project directly to SaleSummary so EF emits a single SELECT against
+        // Sales (no JOIN to SaleItems) — list endpoints don't need item rows.
         var items = await orderedQuery
             .Skip((page - 1) * size)
             .Take(size)
+            .Select(s => new SaleSummary(
+                s.Id,
+                s.SaleNumber,
+                s.SaleDate,
+                s.CustomerId,
+                s.CustomerName,
+                s.BranchId,
+                s.BranchName,
+                s.TotalAmount,
+                s.IsCancelled,
+                s.CreatedAt,
+                s.UpdatedAt,
+                s.Items.Count(i => !i.IsCancelled)))
             .ToListAsync(cancellationToken);
 
         return (items, totalCount);

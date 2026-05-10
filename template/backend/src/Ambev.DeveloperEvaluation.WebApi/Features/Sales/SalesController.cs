@@ -84,30 +84,18 @@ public class SalesController : BaseController
 
     /// <summary>
     /// Lists sales with pagination, filtering and ordering per the API conventions.
+    /// Items are returned as header-only summaries — fetch a specific sale to
+    /// see its line items.
     /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(PaginatedResponse<SaleDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(PaginatedResponse<SaleSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(Microsoft.AspNetCore.Mvc.ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ListSales([FromQuery] ListSalesRequest request, CancellationToken cancellationToken)
     {
-        var validator = new ListSalesRequestValidator();
-        var validationResult = await validator.ValidateAsync(request, cancellationToken);
-        if (!validationResult.IsValid)
-            return BadRequest(new ApiResponse
-            {
-                Success = false,
-                Message = "Validation Failed",
-                Errors = validationResult.Errors.Select(e => new ValidationErrorDetail
-                {
-                    Error = e.ErrorCode,
-                    Detail = e.ErrorMessage
-                })
-            });
-
         var query = _mapper.Map<ListSalesQuery>(request);
         var result = await _mediator.Send(query, cancellationToken);
 
-        return base.Ok(new PaginatedResponse<SaleDto>
+        return base.Ok(new PaginatedResponse<SaleSummaryDto>
         {
             Success = true,
             Data = result.Items,
