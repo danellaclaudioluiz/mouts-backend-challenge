@@ -104,6 +104,51 @@ public class SaleTests
         act.Should().Throw<DomainException>();
     }
 
+    [Fact(DisplayName = "CancelItem on an already-cancelled item is a no-op and emits a single event")]
+    public void CancelItem_AlreadyCancelled_IsIdempotent()
+    {
+        var sale = BuildSale();
+        var first = sale.AddItem(Guid.NewGuid(), "A", 2, 10m);
+        sale.AddItem(Guid.NewGuid(), "B", 1, 5m);
+
+        sale.CancelItem(first.Id);
+        var totalAfterFirstCancel = sale.TotalAmount;
+
+        sale.CancelItem(first.Id);
+
+        sale.TotalAmount.Should().Be(totalAfterFirstCancel,
+            "cancelling the same item twice must not change the total again");
+        sale.DomainEvents.OfType<ItemCancelledEvent>()
+            .Where(e => e.ItemId == first.Id).Should().ContainSingle(
+                "only the first cancellation may raise an ItemCancelledEvent");
+    }
+
+    [Fact(DisplayName = "Cancel on a sale with no items still emits SaleCancelledEvent and stays consistent")]
+    public void Cancel_EmptySale_StillEmitsEvent()
+    {
+        var sale = BuildSale();
+
+        sale.Cancel();
+
+        sale.IsCancelled.Should().BeTrue();
+        sale.TotalAmount.Should().Be(0m);
+        sale.DomainEvents.OfType<SaleCancelledEvent>().Should().ContainSingle();
+    }
+
+    [Fact(DisplayName = "Cancel on sale cancels every still-active item too")]
+    public void Cancel_CascadesToAllActiveItems()
+    {
+        var sale = BuildSale();
+        sale.AddItem(Guid.NewGuid(), "A", 2, 10m);
+        sale.AddItem(Guid.NewGuid(), "B", 3, 30m);
+
+        sale.Cancel();
+
+        sale.Items.Should().OnlyContain(i => i.IsCancelled);
+        sale.TotalAmount.Should().Be(0m,
+            "all items are cancelled so the rollup must be zero");
+    }
+
     [Fact(DisplayName = "MarkCreated queues a SaleCreatedEvent with final totals")]
     public void MarkCreated_QueuesEventWithFinalTotals()
     {
