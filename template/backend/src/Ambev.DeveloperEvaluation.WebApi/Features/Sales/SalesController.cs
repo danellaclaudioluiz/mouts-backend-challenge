@@ -67,12 +67,10 @@ public class SalesController : BaseController
         var result = await _mediator.Send(new GetSaleQuery(id), cancellationToken);
         Response.Headers.ETag = ETagFor(result.RowVersion);
 
-        return Ok(new ApiResponseWithData<SaleDto>
-        {
-            Success = true,
-            Message = "Sale retrieved successfully",
-            Data = result
-        });
+        // BaseController.Ok<T>(T) wraps the value in ApiResponseWithData<T>;
+        // passing an already-wrapped envelope here would double-encode and
+        // surface as {"data":{"data":...}} on the wire.
+        return Ok(result);
     }
 
     /// <summary>
@@ -89,7 +87,10 @@ public class SalesController : BaseController
         var query = _mapper.Map<ListSalesQuery>(request);
         var result = await _mediator.Send(query, cancellationToken);
 
-        return base.Ok(new PaginatedResponse<SaleSummaryDto>
+        // ControllerBase.Ok (note the explicit cast — `base.Ok` would pick
+        // BaseController's wrapping helper) — PaginatedResponse already
+        // carries success/data/pagination fields.
+        return ((ControllerBase)this).Ok(new PaginatedResponse<SaleSummaryDto>
         {
             Success = true,
             Data = result.Items,
@@ -124,12 +125,7 @@ public class SalesController : BaseController
         var result = await _mediator.Send(command, cancellationToken);
         Response.Headers.ETag = ETagFor(result.RowVersion);
 
-        return Ok(new ApiResponseWithData<SaleDto>
-        {
-            Success = true,
-            Message = "Sale updated successfully",
-            Data = result
-        });
+        return Ok(result);
     }
 
     /// <summary>
@@ -145,7 +141,8 @@ public class SalesController : BaseController
     {
         var expectedRowVersion = ParseIfMatch(Request.Headers.IfMatch);
         await _mediator.Send(new DeleteSaleCommand(id, expectedRowVersion), cancellationToken);
-        return base.Ok(new ApiResponse { Success = true, Message = "Sale deleted successfully" });
+        // ApiResponse already carries success/message, no need to wrap again.
+        return ((ControllerBase)this).Ok(new ApiResponse { Success = true, Message = "Sale deleted successfully" });
     }
 
     /// <summary>Soft-cancels a sale (sets IsCancelled = true). Idempotent.</summary>
@@ -159,12 +156,7 @@ public class SalesController : BaseController
         var result = await _mediator.Send(new CancelSaleCommand(id), cancellationToken);
         Response.Headers.ETag = ETagFor(result.RowVersion);
 
-        return Ok(new ApiResponseWithData<SaleDto>
-        {
-            Success = true,
-            Message = "Sale cancelled successfully",
-            Data = result
-        });
+        return Ok(result);
     }
 
     /// <summary>Cancels a single item within a sale and recalculates the total.</summary>
@@ -182,12 +174,7 @@ public class SalesController : BaseController
         var result = await _mediator.Send(new CancelSaleItemCommand(id, itemId), cancellationToken);
         Response.Headers.ETag = ETagFor(result.RowVersion);
 
-        return Ok(new ApiResponseWithData<SaleDto>
-        {
-            Success = true,
-            Message = "Sale item cancelled successfully",
-            Data = result
-        });
+        return Ok(result);
     }
 
     /// <summary>Encodes an aggregate's row version as a strong HTTP ETag.</summary>
