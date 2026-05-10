@@ -73,49 +73,26 @@ public class Sale : BaseEntity
     }
 
     /// <summary>
-    /// Adds (or merges into an existing line) a product to the sale. If the
-    /// same product is already present and not cancelled, quantities are
-    /// summed so the per-product 20-item cap cannot be bypassed by splitting
-    /// lines. Raises <see cref="SaleModifiedEvent"/>.
+    /// Adds a new line for a product. Each ProductId may appear at most once
+    /// in a sale's non-cancelled items — callers must consolidate quantities
+    /// before adding. The same rule applies in both Create and Update flows,
+    /// so the API surface is consistent and the per-product 20-cap can't be
+    /// bypassed by splitting lines.
     /// </summary>
-    /// <remarks>
-    /// When merging, the new line MUST agree with the existing one on both
-    /// <paramref name="unitPrice"/> and <paramref name="productName"/>.
-    /// Different values would otherwise be silently dropped, producing a
-    /// financial divergence between what the caller sent and what the
-    /// system charged. Callers should consolidate before sending.
-    /// </remarks>
     public SaleItem AddItem(Guid productId, string productName, int quantity, decimal unitPrice)
     {
         EnsureNotCancelled();
 
-        var existing = _items.FirstOrDefault(i =>
-            i.ProductId == productId && !i.IsCancelled);
+        if (_items.Any(i => i.ProductId == productId && !i.IsCancelled))
+            throw new DomainException(
+                $"Product '{productId}' is already in sale '{SaleNumber}'. " +
+                "Consolidate quantities for the same product into a single line.");
 
-        SaleItem item;
-        if (existing is not null)
+        var item = new SaleItem(productId, productName, quantity, unitPrice)
         {
-            if (existing.UnitPrice != unitPrice)
-                throw new DomainException(
-                    $"Cannot merge item for product '{productId}': unit price " +
-                    $"{unitPrice} does not match existing line ({existing.UnitPrice}).");
-
-            if (!string.Equals(existing.ProductName, productName, StringComparison.Ordinal))
-                throw new DomainException(
-                    $"Cannot merge item for product '{productId}': product name " +
-                    $"'{productName}' does not match existing line ('{existing.ProductName}').");
-
-            existing.ChangeQuantity(existing.Quantity + quantity);
-            item = existing;
-        }
-        else
-        {
-            item = new SaleItem(productId, productName, quantity, unitPrice)
-            {
-                SaleId = Id
-            };
-            _items.Add(item);
-        }
+            SaleId = Id
+        };
+        _items.Add(item);
 
         Recalculate();
         Touch();

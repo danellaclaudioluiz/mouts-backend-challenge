@@ -34,6 +34,8 @@ public class CreateSaleHandler : IRequestHandler<CreateSaleCommand, SaleDto>
 
     public async Task<SaleDto> Handle(CreateSaleCommand command, CancellationToken cancellationToken)
     {
+        SaleItemPayloadGuard.EnsureUniqueProductIds(command.Items);
+
         var existing = await _saleRepository.GetBySaleNumberAsync(command.SaleNumber, cancellationToken);
         if (existing is not null)
             throw new ConflictException(

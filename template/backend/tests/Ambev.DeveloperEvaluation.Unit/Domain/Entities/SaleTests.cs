@@ -16,20 +16,20 @@ public class SaleTests
         branchId: Guid.NewGuid(),
         branchName: "Branch 1");
 
-    [Fact(DisplayName = "AddItem with the same product merges quantities")]
-    public void AddItem_SameProductTwice_MergesIntoSingleLine()
+    [Fact(DisplayName = "AddItem rejects a second line for the same product")]
+    public void AddItem_SameProductTwice_Throws()
     {
         var sale = BuildSale();
         var productId = Guid.NewGuid();
 
         sale.AddItem(productId, "Beer", 5, 10m);
-        sale.AddItem(productId, "Beer", 3, 10m);
 
-        sale.Items.Should().HaveCount(1);
-        sale.Items.Single().Quantity.Should().Be(8);
+        var act = () => sale.AddItem(productId, "Beer", 3, 10m);
+
+        act.Should().Throw<DomainException>().WithMessage("*already in sale*");
     }
 
-    [Fact(DisplayName = "AddItem rejects merging the same product with a different unit price")]
+    [Fact(DisplayName = "AddItem rejects same product even with different unit price")]
     public void AddItem_SameProductDifferentPrice_Throws()
     {
         var sale = BuildSale();
@@ -38,10 +38,10 @@ public class SaleTests
 
         var act = () => sale.AddItem(productId, "Beer", 3, 12m);
 
-        act.Should().Throw<DomainException>().WithMessage("*unit price*");
+        act.Should().Throw<DomainException>();
     }
 
-    [Fact(DisplayName = "AddItem rejects merging the same product with a different name")]
+    [Fact(DisplayName = "AddItem rejects same product even with different name")]
     public void AddItem_SameProductDifferentName_Throws()
     {
         var sale = BuildSale();
@@ -50,20 +50,7 @@ public class SaleTests
 
         var act = () => sale.AddItem(productId, "Beer Lite", 3, 10m);
 
-        act.Should().Throw<DomainException>().WithMessage("*product name*");
-    }
-
-    [Fact(DisplayName = "AddItem cannot bypass 20-cap by splitting lines")]
-    public void AddItem_SplitLines_StillEnforces20Cap()
-    {
-        var sale = BuildSale();
-        var productId = Guid.NewGuid();
-        sale.AddItem(productId, "Beer", 15, 10m);
-
-        var act = () => sale.AddItem(productId, "Beer", 6, 10m);
-
-        act.Should().Throw<DomainException>()
-            .WithMessage("*more than 20 identical items*");
+        act.Should().Throw<DomainException>();
     }
 
     [Fact(DisplayName = "AddItem against a cancelled sale throws")]

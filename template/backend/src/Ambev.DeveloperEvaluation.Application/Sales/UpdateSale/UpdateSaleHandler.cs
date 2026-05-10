@@ -32,10 +32,10 @@ public class UpdateSaleHandler : IRequestHandler<UpdateSaleCommand, SaleDto>
 
     public async Task<SaleDto> Handle(UpdateSaleCommand command, CancellationToken cancellationToken)
     {
+        SaleItemPayloadGuard.EnsureUniqueProductIds(command.Items);
+
         var sale = await _saleRepository.GetByIdAsync(command.Id, cancellationToken)
             ?? throw new ResourceNotFoundException("Sale", command.Id);
-
-        EnsureUniqueProductIds(command);
 
         sale.UpdateHeader(
             command.SaleDate,
@@ -56,17 +56,6 @@ public class UpdateSaleHandler : IRequestHandler<UpdateSaleCommand, SaleDto>
         sale.ClearDomainEvents();
 
         return _mapper.Map<SaleDto>(sale);
-    }
-
-    private static void EnsureUniqueProductIds(UpdateSaleCommand command)
-    {
-        var duplicate = command.Items
-            .GroupBy(i => i.ProductId)
-            .FirstOrDefault(g => g.Count() > 1);
-        if (duplicate is not null)
-            throw new DomainException(
-                $"Product '{duplicate.Key}' appears in the update payload more than once. " +
-                "Consolidate the lines before sending.");
     }
 
     private static void ApplyItemDiff(Sale sale, IReadOnlyList<CreateSale.CreateSaleItemDto> incoming)
