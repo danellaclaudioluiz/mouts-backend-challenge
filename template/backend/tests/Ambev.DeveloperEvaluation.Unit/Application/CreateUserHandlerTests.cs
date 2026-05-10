@@ -74,22 +74,6 @@ public class CreateUserHandlerTests
     }
 
     /// <summary>
-    /// Tests that an invalid user creation request throws a validation exception.
-    /// </summary>
-    [Fact(DisplayName = "Given invalid user data When creating user Then throws validation exception")]
-    public async Task Handle_InvalidRequest_ThrowsValidationException()
-    {
-        // Given
-        var command = new CreateUserCommand(); // Empty command will fail validation
-
-        // When
-        var act = () => _handler.Handle(command, CancellationToken.None);
-
-        // Then
-        await act.Should().ThrowAsync<FluentValidation.ValidationException>();
-    }
-
-    /// <summary>
     /// Tests that the password is hashed before saving the user.
     /// </summary>
     [Fact(DisplayName = "Given user creation request When handling Then password is hashed")]
