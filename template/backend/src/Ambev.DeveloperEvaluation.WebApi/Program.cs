@@ -29,9 +29,16 @@ public class Program
             builder.AddBasicHealthChecks();
             builder.Services.AddSwaggerGen();
 
+            var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+            if (string.IsNullOrWhiteSpace(connectionString))
+                throw new InvalidOperationException(
+                    "ConnectionStrings:DefaultConnection is not configured. " +
+                    "Set it in appsettings.Development.json, user-secrets, or the " +
+                    "ConnectionStrings__DefaultConnection environment variable.");
+
             builder.Services.AddDbContext<DefaultContext>(options =>
                 options.UseNpgsql(
-                    builder.Configuration.GetConnectionString("DefaultConnection"),
+                    connectionString,
                     b => b.MigrationsAssembly("Ambev.DeveloperEvaluation.ORM")
                 )
             );
@@ -75,6 +82,7 @@ public class Program
         catch (Exception ex)
         {
             Log.Fatal(ex, "Application terminated unexpectedly");
+            throw;
         }
         finally
         {
