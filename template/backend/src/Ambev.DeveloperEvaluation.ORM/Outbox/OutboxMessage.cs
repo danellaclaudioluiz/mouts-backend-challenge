@@ -14,4 +14,13 @@ public class OutboxMessage
     public DateTime? ProcessedAt { get; set; }
     public int Attempts { get; set; }
     public string? LastError { get; set; }
+
+    /// <summary>
+    /// Soft lock granted to a dispatcher instance — other dispatchers skip
+    /// the row until this timestamp expires. Lets the dispatcher commit the
+    /// row-lock acquisition immediately and run the (potentially slow)
+    /// publish step outside any transaction, so a broker round-trip doesn't
+    /// hold row locks for hundreds of milliseconds.
+    /// </summary>
+    public DateTime? LockedUntil { get; set; }
 }

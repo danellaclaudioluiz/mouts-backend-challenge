@@ -7,44 +7,64 @@ namespace Ambev.DeveloperEvaluation.ORM.Outbox;
 
 /// <summary>
 /// Polls OutboxMessages for un-dispatched rows and emits them via the
-/// application log (the challenge's stand-in for a real broker). Keeps a
-/// per-message attempt counter and last-error string so transient failures
-/// stay visible without losing the event.
+/// application log (the challenge's stand-in for a real broker).
 /// </summary>
 /// <remarks>
-/// Each poll runs inside a transaction with <c>FOR UPDATE SKIP LOCKED</c>
-/// on the SELECT, so multiple dispatcher instances (one per app pod)
-/// cooperate without producing duplicates: each batch is locked exclusively
-/// by the picking instance, and the other instances skip those rows and
-/// grab the next batch.
-///
-/// The poll interval has a small random jitter (±200 ms) so deploys with N
-/// replicas don't synchronise their hits on the database. Messages that
-/// have failed <see cref="DeadLetterAfterAttempts"/> times in a row are
-/// considered poisoned and skipped by the picker; their row stays in the
-/// table for an operator to inspect (LastError is preserved).
+/// Two-phase dispatch keeps row locks short even when the publish call is
+/// slow (Kafka/RabbitMQ round-trips):
+/// <list type="number">
+///   <item>
+///     <b>Phase 1 (short transaction).</b> SELECT … FOR UPDATE SKIP LOCKED
+///     a batch of pending rows whose LockedUntil has expired or is null,
+///     stamp <c>LockedUntil = now() + LockTtl</c> on each, and commit
+///     immediately. The Postgres row locks are released by the commit but
+///     the soft lock keeps other dispatcher replicas from picking the same
+///     rows.
+///   </item>
+///   <item>
+///     <b>Phase 2 (no transaction).</b> Call DeliverAsync for each
+///     message. With a real broker this is the slow part (network) and we
+///     hold no DB locks while it runs.
+///   </item>
+///   <item>
+///     <b>Phase 3 (short transactions).</b> Mark the successful rows
+///     (ProcessedAt = now(), LockedUntil = null, LastError = null,
+///     Attempts++) in a single bulk UPDATE; record per-row LastError for
+///     failures so they retry on the next tick (until the dead-letter cap).
+///   </item>
+/// </list>
+/// Dead-lettered rows (Attempts &gt;= cap) stop being picked by phase 1.
 /// </remarks>
 public class OutboxDispatcherService : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan PollJitter = TimeSpan.FromMilliseconds(200);
-    private const int BatchSize = 50;
 
     /// <summary>
-    /// Maximum delivery attempts before the message is treated as a
-    /// dead-letter — it stops being picked by the dispatcher but stays in
-    /// the table with its last error preserved.
+    /// How long a soft lock survives if a dispatcher dies mid-publish.
+    /// After this expires another dispatcher will pick the row up.
     /// </summary>
+    private static readonly TimeSpan LockTtl = TimeSpan.FromSeconds(30);
+
+    private const int BatchSize = 50;
     private const int DeadLetterAfterAttempts = 10;
 
-    private static readonly string SelectPendingSql = $"""
-        SELECT *
-        FROM "OutboxMessages"
-        WHERE "ProcessedAt" IS NULL
-          AND "Attempts" < {DeadLetterAfterAttempts}
-        ORDER BY "OccurredAt"
-        LIMIT {BatchSize}
-        FOR UPDATE SKIP LOCKED
+    private static readonly string ClaimPendingSql = $"""
+        WITH picked AS (
+            SELECT "Id"
+            FROM "OutboxMessages"
+            WHERE "ProcessedAt" IS NULL
+              AND "Attempts" < {DeadLetterAfterAttempts}
+              AND ("LockedUntil" IS NULL OR "LockedUntil" < now())
+            ORDER BY "OccurredAt"
+            LIMIT {BatchSize}
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE "OutboxMessages" o
+        SET "LockedUntil" = now() + INTERVAL '{(int)LockTtl.TotalSeconds} seconds'
+        FROM picked
+        WHERE o."Id" = picked."Id"
+        RETURNING o.*;
         """;
 
     private readonly IServiceScopeFactory _scopeFactory;
@@ -75,8 +95,6 @@ public class OutboxDispatcherService : BackgroundService
 
             try
             {
-                // ±200 ms jitter so multiple replicas don't queue up on the
-                // same hot millisecond.
                 var jitterMs = Random.Shared.Next(
                     -(int)PollJitter.TotalMilliseconds,
                     (int)PollJitter.TotalMilliseconds);
@@ -88,63 +106,96 @@ public class OutboxDispatcherService : BackgroundService
 
     private async Task DispatchPendingAsync(CancellationToken cancellationToken)
     {
+        // Phase 1: claim a batch under a short transaction.
+        var claimed = await ClaimBatchAsync(cancellationToken);
+        if (claimed.Count == 0) return;
+
+        // Phase 2: publish each message outside any transaction. With a real
+        // broker, this is the slow part — we hold zero DB locks here.
+        var succeeded = new List<Guid>(claimed.Count);
+        var failed = new List<(Guid Id, string Error)>();
+
+        foreach (var message in claimed)
+        {
+            try
+            {
+                await DeliverAsync(message, cancellationToken);
+                succeeded.Add(message.Id);
+            }
+            catch (Exception ex)
+            {
+                var error = ex.Message.Length > 2000 ? ex.Message[..2000] : ex.Message;
+                failed.Add((message.Id, error));
+                _logger.LogWarning(ex,
+                    "Failed to dispatch outbox message {MessageId}", message.Id);
+            }
+        }
+
+        // Phase 3: short transactions to mark outcomes.
+        await PersistOutcomesAsync(succeeded, failed, cancellationToken);
+    }
+
+    private async Task<List<OutboxMessage>> ClaimBatchAsync(CancellationToken cancellationToken)
+    {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<DefaultContext>();
 
         await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
-        var pending = await context.OutboxMessages
-            .FromSqlRaw(SelectPendingSql)
+        var rows = await context.OutboxMessages
+            .FromSqlRaw(ClaimPendingSql)
+            .AsNoTracking()
             .ToListAsync(cancellationToken);
 
-        if (pending.Count == 0)
-        {
-            await transaction.CommitAsync(cancellationToken);
-            return;
-        }
-
-        // Capture the DB clock once per batch — the dispatcher uses the
-        // server's now() so wall-clock skew between replicas does not
-        // pollute the ProcessedAt timeline.
-        var batchProcessedAt = await SqlNowAsync(context, cancellationToken);
-
-        var deadLettered = 0;
-        foreach (var message in pending)
-        {
-            try
-            {
-                await DeliverAsync(message, cancellationToken);
-
-                message.ProcessedAt = batchProcessedAt;
-                message.Attempts += 1;
-                message.LastError = null;
-            }
-            catch (Exception ex)
-            {
-                message.Attempts += 1;
-                message.LastError = ex.Message.Length > 2000 ? ex.Message[..2000] : ex.Message;
-
-                if (message.Attempts >= DeadLetterAfterAttempts)
-                {
-                    deadLettered++;
-                    _logger.LogError(ex,
-                        "Outbox message {MessageId} hit the dead-letter cap of {Cap} attempts; not retrying",
-                        message.Id, DeadLetterAfterAttempts);
-                }
-                else
-                {
-                    _logger.LogWarning(ex,
-                        "Failed to dispatch outbox message {MessageId} (attempt {Attempts}/{Cap})",
-                        message.Id, message.Attempts, DeadLetterAfterAttempts);
-                }
-            }
-        }
-
-        await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        return rows;
+    }
 
-        if (deadLettered > 0)
-            _logger.LogWarning("Outbox dispatcher dead-lettered {Count} message(s) this tick", deadLettered);
+    private async Task PersistOutcomesAsync(
+        IReadOnlyCollection<Guid> succeeded,
+        IReadOnlyCollection<(Guid Id, string Error)> failed,
+        CancellationToken cancellationToken)
+    {
+        if (succeeded.Count == 0 && failed.Count == 0) return;
+
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<DefaultContext>();
+
+        if (succeeded.Count > 0)
+        {
+            const string markProcessedSql = """
+                UPDATE "OutboxMessages"
+                SET "ProcessedAt" = now() AT TIME ZONE 'utc',
+                    "Attempts" = "Attempts" + 1,
+                    "LastError" = NULL,
+                    "LockedUntil" = NULL
+                WHERE "Id" = ANY({0});
+                """;
+
+            await context.Database.ExecuteSqlRawAsync(
+                markProcessedSql,
+                new object[] { succeeded.ToArray() },
+                cancellationToken);
+        }
+
+        if (failed.Count > 0)
+        {
+            const string markFailedSql = """
+                UPDATE "OutboxMessages"
+                SET "Attempts" = "Attempts" + 1,
+                    "LastError" = {1},
+                    "LockedUntil" = NULL
+                WHERE "Id" = {0};
+                """;
+
+            foreach (var (id, error) in failed)
+            {
+                await context.Database.ExecuteSqlRawAsync(
+                    markFailedSql,
+                    new object[] { id, error },
+                    cancellationToken);
+            }
+        }
     }
 
     /// <summary>
@@ -158,12 +209,5 @@ public class OutboxDispatcherService : BackgroundService
             "Domain event {EventType} ({MessageId}) occurred at {OccurredAt:o}: {Payload}",
             message.EventType, message.Id, message.OccurredAt, message.Payload);
         return Task.CompletedTask;
-    }
-
-    private static async Task<DateTime> SqlNowAsync(DefaultContext context, CancellationToken cancellationToken)
-    {
-        var nowList = await context.Database.SqlQueryRaw<DateTime>(
-            "SELECT (now() at time zone 'utc') AS \"Value\";").ToListAsync(cancellationToken);
-        return nowList[0];
     }
 }

@@ -17,6 +17,7 @@ public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage
         builder.Property(m => m.ProcessedAt);
         builder.Property(m => m.Attempts).IsRequired();
         builder.Property(m => m.LastError).HasMaxLength(2000);
+        builder.Property(m => m.LockedUntil);
 
         // Genuine partial index — only pending rows are indexed, so the
         // dispatcher's 'WHERE ProcessedAt IS NULL ORDER BY OccurredAt' query
