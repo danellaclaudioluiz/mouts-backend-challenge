@@ -12,14 +12,18 @@ namespace Ambev.DeveloperEvaluation.Integration;
 public class RateLimitedSalesApiFactory : SalesApiFactory
 {
     public const int PermitLimit = 5;
+    public const int WindowSeconds = 2;
 
     protected override void ConfigureExtraEnvironment()
     {
         // Override the relaxed limit set by the base factory. Env vars need
         // to be in place BEFORE the host first builds, hence this hook
         // instead of relying on the InMemoryCollection in ConfigureWebHost.
+        // A 2-second window keeps the "window resets" test fast (3-second
+        // wait) without losing realism — FixedWindowRateLimiter resets the
+        // counter the same way at 2s as at 60s.
         Environment.SetEnvironmentVariable("RateLimit__PermitLimit", PermitLimit.ToString());
-        Environment.SetEnvironmentVariable("RateLimit__WindowSeconds", "60");
+        Environment.SetEnvironmentVariable("RateLimit__WindowSeconds", WindowSeconds.ToString());
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -31,7 +35,7 @@ public class RateLimitedSalesApiFactory : SalesApiFactory
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["RateLimit:PermitLimit"] = PermitLimit.ToString(),
-                ["RateLimit:WindowSeconds"] = "60"
+                ["RateLimit:WindowSeconds"] = WindowSeconds.ToString()
             });
         });
     }
