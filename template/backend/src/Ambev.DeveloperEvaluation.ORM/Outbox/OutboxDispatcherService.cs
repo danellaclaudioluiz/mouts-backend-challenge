@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Ambev.DeveloperEvaluation.ORM.Outbox;
 
@@ -67,20 +69,44 @@ public class OutboxDispatcherService : BackgroundService
         RETURNING o.*;
         """;
 
+    private const string NotificationChannel = "outbox_pending";
+
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<OutboxDispatcherService> _logger;
 
     public OutboxDispatcherService(
         IServiceScopeFactory scopeFactory,
+        IConfiguration configuration,
         ILogger<OutboxDispatcherService> logger)
     {
         _scopeFactory = scopeFactory;
+        _configuration = configuration;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Outbox dispatcher started; polling every {Interval} ± jitter", PollInterval);
+        _logger.LogInformation(
+            "Outbox dispatcher started; LISTEN '{Channel}' + poll fallback every {Interval} ± jitter",
+            NotificationChannel, PollInterval);
+
+        // Dedicated LISTEN connection — separate from EF's pool so it can
+        // stay open for the lifetime of the service without occupying a
+        // pooled DbContext. When the trigger fires NOTIFY outbox_pending,
+        // WaitAsync below returns immediately and the loop runs a dispatch
+        // tick within milliseconds.
+        var connectionString = _configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException(
+                "ConnectionStrings:DefaultConnection is not configured.");
+
+        await using var listenConnection = new NpgsqlConnection(connectionString);
+        await listenConnection.OpenAsync(stoppingToken);
+        await using (var listenCmd = listenConnection.CreateCommand())
+        {
+            listenCmd.CommandText = $"LISTEN {NotificationChannel};";
+            await listenCmd.ExecuteNonQueryAsync(stoppingToken);
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -93,14 +119,24 @@ public class OutboxDispatcherService : BackgroundService
                 _logger.LogError(ex, "Outbox dispatcher loop failed; retrying after {Interval}", PollInterval);
             }
 
+            // Wait for either a NOTIFY (immediate wake) or the poll-interval
+            // timeout (safety net in case the LISTEN connection dropped a
+            // notification or the trigger isn't installed).
             try
             {
                 var jitterMs = Random.Shared.Next(
                     -(int)PollJitter.TotalMilliseconds,
                     (int)PollJitter.TotalMilliseconds);
-                await Task.Delay(PollInterval + TimeSpan.FromMilliseconds(jitterMs), stoppingToken);
+                var waitFor = PollInterval + TimeSpan.FromMilliseconds(jitterMs);
+
+                // WaitAsync returns true on notification, false on timeout.
+                await listenConnection.WaitAsync(waitFor, stoppingToken);
             }
-            catch (TaskCanceledException) { }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                // Shutdown — exit the loop cleanly.
+                return;
+            }
         }
     }
 
