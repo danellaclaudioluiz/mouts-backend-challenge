@@ -2,6 +2,7 @@ using Ambev.DeveloperEvaluation.Application.Sales.Common;
 using Ambev.DeveloperEvaluation.Application.Sales.CreateSale;
 using Ambev.DeveloperEvaluation.Domain.Entities;
 using Ambev.DeveloperEvaluation.Domain.Events;
+using Ambev.DeveloperEvaluation.Domain.Exceptions;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
 using Ambev.DeveloperEvaluation.Unit.Application.TestData;
 using AutoMapper;
@@ -45,7 +46,7 @@ public class CreateSaleHandlerTests
             Arg.Any<CancellationToken>());
     }
 
-    [Fact(DisplayName = "Duplicate SaleNumber throws InvalidOperationException")]
+    [Fact(DisplayName = "Duplicate SaleNumber throws ConflictException")]
     public async Task Handle_DuplicateSaleNumber_Throws()
     {
         var command = CreateSaleHandlerTestData.GenerateValidCommand();
@@ -58,7 +59,7 @@ public class CreateSaleHandlerTests
 
         var act = () => _handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
+        await act.Should().ThrowAsync<ConflictException>()
             .WithMessage($"*'{command.SaleNumber}'*");
         await _saleRepository.DidNotReceive().CreateAsync(Arg.Any<Sale>(), Arg.Any<CancellationToken>());
     }
