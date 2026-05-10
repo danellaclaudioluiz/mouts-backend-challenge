@@ -29,6 +29,30 @@ public class SaleTests
         sale.Items.Single().Quantity.Should().Be(8);
     }
 
+    [Fact(DisplayName = "AddItem rejects merging the same product with a different unit price")]
+    public void AddItem_SameProductDifferentPrice_Throws()
+    {
+        var sale = BuildSale();
+        var productId = Guid.NewGuid();
+        sale.AddItem(productId, "Beer", 5, 10m);
+
+        var act = () => sale.AddItem(productId, "Beer", 3, 12m);
+
+        act.Should().Throw<DomainException>().WithMessage("*unit price*");
+    }
+
+    [Fact(DisplayName = "AddItem rejects merging the same product with a different name")]
+    public void AddItem_SameProductDifferentName_Throws()
+    {
+        var sale = BuildSale();
+        var productId = Guid.NewGuid();
+        sale.AddItem(productId, "Beer", 5, 10m);
+
+        var act = () => sale.AddItem(productId, "Beer Lite", 3, 10m);
+
+        act.Should().Throw<DomainException>().WithMessage("*product name*");
+    }
+
     [Fact(DisplayName = "AddItem cannot bypass 20-cap by splitting lines")]
     public void AddItem_SplitLines_StillEnforces20Cap()
     {

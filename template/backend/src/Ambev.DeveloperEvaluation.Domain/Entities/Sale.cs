@@ -78,6 +78,13 @@ public class Sale : BaseEntity
     /// summed so the per-product 20-item cap cannot be bypassed by splitting
     /// lines. Raises <see cref="SaleModifiedEvent"/>.
     /// </summary>
+    /// <remarks>
+    /// When merging, the new line MUST agree with the existing one on both
+    /// <paramref name="unitPrice"/> and <paramref name="productName"/>.
+    /// Different values would otherwise be silently dropped, producing a
+    /// financial divergence between what the caller sent and what the
+    /// system charged. Callers should consolidate before sending.
+    /// </remarks>
     public SaleItem AddItem(Guid productId, string productName, int quantity, decimal unitPrice)
     {
         EnsureNotCancelled();
@@ -88,6 +95,16 @@ public class Sale : BaseEntity
         SaleItem item;
         if (existing is not null)
         {
+            if (existing.UnitPrice != unitPrice)
+                throw new DomainException(
+                    $"Cannot merge item for product '{productId}': unit price " +
+                    $"{unitPrice} does not match existing line ({existing.UnitPrice}).");
+
+            if (!string.Equals(existing.ProductName, productName, StringComparison.Ordinal))
+                throw new DomainException(
+                    $"Cannot merge item for product '{productId}': product name " +
+                    $"'{productName}' does not match existing line ('{existing.ProductName}').");
+
             existing.ChangeQuantity(existing.Quantity + quantity);
             item = existing;
         }
