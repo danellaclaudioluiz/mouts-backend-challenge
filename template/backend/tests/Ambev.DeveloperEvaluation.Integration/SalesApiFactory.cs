@@ -19,6 +19,11 @@ namespace Ambev.DeveloperEvaluation.Integration;
 /// Requires a working Docker daemon on the test machine — that is the
 /// canonical way to run integration tests locally and in CI without
 /// stubbing out infrastructure.
+///
+/// Shared across every test class via <see cref="IntegrationCollection"/>, so
+/// the container is booted once per test session, not per class. Tests in
+/// the collection run sequentially (xUnit collection contract) so the
+/// per-test <see cref="ResetDatabaseAsync"/> below is race-free.
 /// </remarks>
 public class SalesApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
@@ -46,6 +51,26 @@ public class SalesApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         await _postgres.DisposeAsync();
         await base.DisposeAsync();
+    }
+
+    /// <summary>
+    /// Truncates the mutable application tables so the next test starts
+    /// against a known-empty state. Migrations history and the trigger
+    /// functions stay in place. Called from each test class's IAsyncLifetime
+    /// so every test sees a clean slate.
+    /// </summary>
+    public async Task ResetDatabaseAsync()
+    {
+        using var scope = Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<DefaultContext>();
+        await context.Database.ExecuteSqlRawAsync(@"
+            TRUNCATE TABLE
+                ""SaleItems"",
+                ""OutboxMessages"",
+                ""Sales"",
+                ""Users""
+            RESTART IDENTITY CASCADE;
+        ");
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
