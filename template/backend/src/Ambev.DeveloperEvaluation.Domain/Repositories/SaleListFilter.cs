@@ -6,6 +6,22 @@ namespace Ambev.DeveloperEvaluation.Domain.Repositories;
 /// </summary>
 public sealed record SaleListFilter
 {
+    /// <summary>
+    /// Sale fields that may be used in the ordering expression. Validators
+    /// check requested field names against this list before the query
+    /// reaches the repository, so unknown columns produce a 400 instead of
+    /// hitting the SQL layer.
+    /// </summary>
+    public static readonly IReadOnlyCollection<string> SupportedSortFields = new[]
+    {
+        "SaleNumber",
+        "SaleDate",
+        "TotalAmount",
+        "IsCancelled",
+        "CreatedAt",
+        "UpdatedAt"
+    };
+
     public int Page { get; init; } = 1;
     public int Size { get; init; } = 10;
 

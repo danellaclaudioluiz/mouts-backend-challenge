@@ -10,16 +10,6 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories;
 /// </summary>
 public class SaleRepository : ISaleRepository
 {
-    private static readonly IReadOnlyCollection<string> AllowedSortFields = new[]
-    {
-        nameof(Sale.SaleNumber),
-        nameof(Sale.SaleDate),
-        nameof(Sale.TotalAmount),
-        nameof(Sale.IsCancelled),
-        nameof(Sale.CreatedAt),
-        nameof(Sale.UpdatedAt)
-    };
-
     private readonly DefaultContext _context;
 
     public SaleRepository(DefaultContext context)
@@ -103,7 +93,7 @@ public class SaleRepository : ISaleRepository
 
         var orderedQuery = string.IsNullOrWhiteSpace(filter.Order)
             ? query.OrderByDescending(s => s.SaleDate)
-            : query.OrderByDynamic(filter.Order, AllowedSortFields);
+            : query.OrderByDynamic(filter.Order, SaleListFilter.SupportedSortFields);
 
         var page = filter.Page < 1 ? 1 : filter.Page;
         var size = filter.Size < 1 ? 10 : filter.Size;
