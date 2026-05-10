@@ -20,13 +20,14 @@ namespace Ambev.DeveloperEvaluation.ORM.Migrations
                 oldType: "uuid",
                 oldDefaultValueSql: "gen_random_uuid()");
 
-            migrationBuilder.AddColumn<uint>(
-                name: "xmin",
-                table: "Sales",
-                type: "xid",
-                rowVersion: true,
-                nullable: false,
-                defaultValue: 0u);
+            // Originally added an "xmin" CLR property mapped to Postgres'
+            // built-in xmin system column to surface the row's last txn id as
+            // the optimistic concurrency token. The follow-up migration
+            // ReplaceXminWithRowVersionTrigger replaces it with a bigint
+            // RowVersion maintained by a BEFORE UPDATE trigger (FREEZE-safe).
+            // The original AddColumn<uint>(xmin, xid) call is now a no-op:
+            // xmin already exists on every Postgres table as a system column
+            // and trying to ADD/DROP it raises 0A000.
 
             migrationBuilder.AlterColumn<Guid>(
                 name: "Id",
@@ -41,9 +42,7 @@ namespace Ambev.DeveloperEvaluation.ORM.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(
-                name: "xmin",
-                table: "Sales");
+            // No xmin column to drop — see the note in Up.
 
             migrationBuilder.AlterColumn<Guid>(
                 name: "Id",

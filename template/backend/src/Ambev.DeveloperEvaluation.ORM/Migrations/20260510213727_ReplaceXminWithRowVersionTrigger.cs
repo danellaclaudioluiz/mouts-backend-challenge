@@ -26,10 +26,27 @@ namespace Ambev.DeveloperEvaluation.ORM.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             // The previous mapping declared a CLR property mapped to the xmin
-            // SYSTEM column. xmin is reserved by Postgres so any real column
-            // by that name would have failed to be created — guarded drop
-            // keeps the migration idempotent across environments.
-            migrationBuilder.Sql(@"ALTER TABLE ""Sales"" DROP COLUMN IF EXISTS ""xmin"";");
+            // SYSTEM column. Postgres exposes xmin on every table as a
+            // built-in system column (attnum < 0) — even DROP COLUMN IF
+            // EXISTS targets it and raises 0A000 "cannot drop system column".
+            // Only attempt the drop when a USER column called "xmin" really
+            // exists (attnum > 0), which would only happen on an environment
+            // that ran an older revision of AddSaleConcurrencyToken.
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                          FROM pg_attribute
+                         WHERE attrelid = '""Sales""'::regclass
+                           AND attname  = 'xmin'
+                           AND attnum   > 0
+                           AND NOT attisdropped
+                    ) THEN
+                        ALTER TABLE ""Sales"" DROP COLUMN ""xmin"";
+                    END IF;
+                END $$;
+            ");
 
             migrationBuilder.AddColumn<long>(
                 name: "RowVersion",
