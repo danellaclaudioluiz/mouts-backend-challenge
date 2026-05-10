@@ -155,6 +155,8 @@ public class SalesController : BaseController
     public async Task<IActionResult> CancelSale([FromRoute] Guid id, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new CancelSaleCommand(id), cancellationToken);
+        Response.Headers.ETag = ETagFor(result.RowVersion);
+
         return Ok(new ApiResponseWithData<SaleDto>
         {
             Success = true,
@@ -176,6 +178,8 @@ public class SalesController : BaseController
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new CancelSaleItemCommand(id, itemId), cancellationToken);
+        Response.Headers.ETag = ETagFor(result.RowVersion);
+
         return Ok(new ApiResponseWithData<SaleDto>
         {
             Success = true,

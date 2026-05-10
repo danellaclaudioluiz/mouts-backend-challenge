@@ -81,20 +81,29 @@ public class Program
                 });
             });
 
-            // Rate limiting: a fixed-window per-IP bucket on the API surface.
-            // Lower the limit per-route or by user via additional policies.
+            // Rate limiting: fixed-window per principal on the API surface.
+            // Partition by authenticated user first so corporate clients sharing
+            // a NAT IP do not throttle each other; fall back to remote IP for
+            // anonymous traffic. Lower the limit per-route via additional policies.
             builder.Services.AddRateLimiter(options =>
             {
                 options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
                 options.AddPolicy(ApiRateLimitPolicy, httpContext =>
-                    RateLimitPartition.GetFixedWindowLimiter(
-                        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
-                        factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    var partitionKey =
+                        httpContext.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                        ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                        ?? "anonymous";
+
+                    return RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey,
+                        _ => new FixedWindowRateLimiterOptions
                         {
                             PermitLimit = 100,
                             Window = TimeSpan.FromMinutes(1),
                             QueueLimit = 0
-                        }));
+                        });
+                });
             });
 
             builder.AddBasicHealthChecks();
