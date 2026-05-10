@@ -4,7 +4,6 @@ using Ambev.DeveloperEvaluation.Domain.Events;
 using Ambev.DeveloperEvaluation.Domain.Exceptions;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
 using AutoMapper;
-using FluentValidation;
 using MediatR;
 
 namespace Ambev.DeveloperEvaluation.Application.Sales.CancelSaleItem;
@@ -32,11 +31,6 @@ public class CancelSaleItemHandler : IRequestHandler<CancelSaleItemCommand, Sale
 
     public async Task<SaleDto> Handle(CancelSaleItemCommand command, CancellationToken cancellationToken)
     {
-        var validator = new CancelSaleItemValidator();
-        var validationResult = await validator.ValidateAsync(command, cancellationToken);
-        if (!validationResult.IsValid)
-            throw new ValidationException(validationResult.Errors);
-
         var sale = await _saleRepository.GetByIdAsync(command.SaleId, cancellationToken)
             ?? throw new ResourceNotFoundException("Sale", command.SaleId);
 

@@ -1,6 +1,5 @@
 using Ambev.DeveloperEvaluation.Domain.Exceptions;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
-using FluentValidation;
 using MediatR;
 
 namespace Ambev.DeveloperEvaluation.Application.Sales.DeleteSale;
@@ -20,11 +19,6 @@ public class DeleteSaleHandler : IRequestHandler<DeleteSaleCommand, Unit>
 
     public async Task<Unit> Handle(DeleteSaleCommand command, CancellationToken cancellationToken)
     {
-        var validator = new DeleteSaleValidator();
-        var validationResult = await validator.ValidateAsync(command, cancellationToken);
-        if (!validationResult.IsValid)
-            throw new ValidationException(validationResult.Errors);
-
         var deleted = await _saleRepository.DeleteAsync(command.Id, cancellationToken);
         if (!deleted)
             throw new ResourceNotFoundException("Sale", command.Id);

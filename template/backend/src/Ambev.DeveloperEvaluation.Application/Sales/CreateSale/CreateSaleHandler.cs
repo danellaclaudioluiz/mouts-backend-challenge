@@ -4,7 +4,6 @@ using Ambev.DeveloperEvaluation.Domain.Events;
 using Ambev.DeveloperEvaluation.Domain.Exceptions;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
 using AutoMapper;
-using FluentValidation;
 using MediatR;
 
 namespace Ambev.DeveloperEvaluation.Application.Sales.CreateSale;
@@ -33,11 +32,6 @@ public class CreateSaleHandler : IRequestHandler<CreateSaleCommand, SaleDto>
 
     public async Task<SaleDto> Handle(CreateSaleCommand command, CancellationToken cancellationToken)
     {
-        var validator = new CreateSaleValidator();
-        var validationResult = await validator.ValidateAsync(command, cancellationToken);
-        if (!validationResult.IsValid)
-            throw new ValidationException(validationResult.Errors);
-
         var existing = await _saleRepository.GetBySaleNumberAsync(command.SaleNumber, cancellationToken);
         if (existing is not null)
             throw new ConflictException(

@@ -64,26 +64,21 @@ public class CreateSaleHandlerTests
         await _saleRepository.DidNotReceive().CreateAsync(Arg.Any<Sale>(), Arg.Any<CancellationToken>());
     }
 
-    [Fact(DisplayName = "Empty items list fails validation")]
-    public async Task Handle_NoItems_ThrowsValidationException()
+    [Fact(DisplayName = "Quantity above 20 still throws DomainException at the aggregate")]
+    public async Task Handle_QuantityAboveCap_ThrowsDomainException()
     {
-        var command = CreateSaleHandlerTestData.GenerateValidCommand();
-        command.Items.Clear();
-
-        var act = () => _handler.Handle(command, CancellationToken.None);
-
-        await act.Should().ThrowAsync<FluentValidation.ValidationException>();
-    }
-
-    [Fact(DisplayName = "Quantity above 20 fails validation before reaching the aggregate")]
-    public async Task Handle_QuantityAboveCap_ThrowsValidationException()
-    {
+        // Validation now lives in the MediatR pipeline (ValidationBehavior)
+        // and is bypassed by direct handler tests. The aggregate's discount
+        // policy is the second line of defense — qty=21 must still throw.
         var command = CreateSaleHandlerTestData.GenerateValidCommand();
         command.Items[0].Quantity = 21;
+        _saleRepository.GetBySaleNumberAsync(command.SaleNumber, Arg.Any<CancellationToken>())
+            .Returns((Sale?)null);
 
         var act = () => _handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<FluentValidation.ValidationException>();
+        await act.Should().ThrowAsync<DomainException>()
+            .WithMessage("*more than 20 identical items*");
     }
 
     [Fact(DisplayName = "DomainEvents are cleared after publication")]
