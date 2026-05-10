@@ -11,12 +11,16 @@ namespace Ambev.DeveloperEvaluation.ORM.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // Backfill existing rows with the current UTC time (now() at the
+            // database) instead of DateTime.MinValue, which Npgsql rejects
+            // for 'timestamp with time zone' columns when DateTimeKind is
+            // Unspecified.
             migrationBuilder.AddColumn<DateTime>(
                 name: "CreatedAt",
                 table: "Users",
                 type: "timestamp with time zone",
                 nullable: false,
-                defaultValue: new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified));
+                defaultValueSql: "now() at time zone 'utc'");
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "UpdatedAt",
