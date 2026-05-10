@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Reflection;
 using System.Text.Json;
 using Ambev.DeveloperEvaluation.Domain.Events;
 
@@ -25,6 +27,11 @@ public class OutboxDomainEventPublisher : IDomainEventPublisher
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+    // Cache the alias lookup per CLR type. Reflection happens once per type
+    // for the lifetime of the process; subsequent publishes are a dictionary
+    // hit.
+    private static readonly ConcurrentDictionary<Type, string> AliasCache = new();
+
     private readonly DefaultContext _context;
 
     public OutboxDomainEventPublisher(DefaultContext context)
@@ -34,11 +41,12 @@ public class OutboxDomainEventPublisher : IDomainEventPublisher
 
     public Task PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
     {
+        var clrType = domainEvent.GetType();
         var message = new OutboxMessage
         {
             Id = Guid.NewGuid(),
-            EventType = domainEvent.GetType().FullName ?? domainEvent.GetType().Name,
-            Payload = JsonSerializer.Serialize(domainEvent, domainEvent.GetType(), JsonOptions),
+            EventType = ResolveAlias(clrType),
+            Payload = JsonSerializer.Serialize(domainEvent, clrType, JsonOptions),
             OccurredAt = domainEvent.OccurredAt,
             Attempts = 0
         };
@@ -46,4 +54,16 @@ public class OutboxDomainEventPublisher : IDomainEventPublisher
         _context.OutboxMessages.Add(message);
         return Task.CompletedTask;
     }
+
+    private static string ResolveAlias(Type type) =>
+        AliasCache.GetOrAdd(type, static t =>
+        {
+            var attr = t.GetCustomAttribute<EventTypeAttribute>(inherit: false);
+            if (attr is null)
+                throw new InvalidOperationException(
+                    $"Domain event '{t.FullName}' is missing [EventType(\"...\")]. " +
+                    "Add a stable wire alias (e.g. 'sale.created.v1') so renames " +
+                    "and namespace moves don't invalidate enqueued outbox rows.");
+            return attr.Alias;
+        });
 }

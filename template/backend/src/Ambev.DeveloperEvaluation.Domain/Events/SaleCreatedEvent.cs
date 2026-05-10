@@ -3,6 +3,7 @@ namespace Ambev.DeveloperEvaluation.Domain.Events;
 /// <summary>
 /// Raised when a new sale is created.
 /// </summary>
+[EventType("sale.created.v1")]
 public sealed record SaleCreatedEvent(
     Guid SaleId,
     string SaleNumber,
