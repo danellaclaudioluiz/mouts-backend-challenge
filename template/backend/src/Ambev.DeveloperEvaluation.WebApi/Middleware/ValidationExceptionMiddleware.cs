@@ -146,11 +146,19 @@ namespace Ambev.DeveloperEvaluation.WebApi.Middleware
                     g => string.IsNullOrWhiteSpace(g.Key) ? "_" : g.Key,
                     g => g.Select(e => e.ErrorMessage).ToArray());
 
+            // Detail is OPTIONAL per RFC 7807, but every other exit point in
+            // this middleware emits one so the client always gets a single
+            // human-readable line in addition to the per-field errors{}.
+            var summary = ex.Errors.Count() == 1
+                ? ex.Errors.First().ErrorMessage
+                : $"{ex.Errors.Count()} validation errors occurred.";
+
             return new ValidationProblemDetails(grouped)
             {
                 Status = StatusCodes.Status400BadRequest,
                 Title = "Validation failed",
                 Type = "https://httpstatuses.io/400",
+                Detail = summary,
                 Instance = context.Request.Path
             };
         }
