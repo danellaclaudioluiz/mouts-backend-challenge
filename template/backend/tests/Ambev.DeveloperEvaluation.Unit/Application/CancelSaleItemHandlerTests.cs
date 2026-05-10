@@ -56,7 +56,11 @@ public class CancelSaleItemHandlerTests
         second.IsCancelled.Should().BeTrue();
         sale.TotalAmount.Should().Be(first.TotalAmount);
         await _eventPublisher.Received(1).PublishAsync(
-            Arg.Is<IDomainEvent>(e => e is ItemCancelledEvent),
+            Arg.Is<IDomainEvent>(e => e is ItemCancelledEvent
+                && ((ItemCancelledEvent)e).SaleId == sale.Id
+                && ((ItemCancelledEvent)e).ItemId == second.Id
+                && ((ItemCancelledEvent)e).ProductId == second.ProductId
+                && ((ItemCancelledEvent)e).Quantity == second.Quantity),
             Arg.Any<CancellationToken>());
     }
 

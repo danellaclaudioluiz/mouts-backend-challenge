@@ -166,7 +166,11 @@ public class UpdateSaleHandlerTests
         }, CancellationToken.None);
 
         await _eventPublisher.Received().PublishAsync(
-            Arg.Is<IDomainEvent>(e => e is SaleModifiedEvent),
+            Arg.Is<IDomainEvent>(e => e is SaleModifiedEvent
+                && ((SaleModifiedEvent)e).SaleId == sale.Id
+                && ((SaleModifiedEvent)e).SaleNumber == sale.SaleNumber
+                && ((SaleModifiedEvent)e).ItemCount == 1
+                && ((SaleModifiedEvent)e).TotalAmount == sale.TotalAmount),
             Arg.Any<CancellationToken>());
         sale.DomainEvents.Should().BeEmpty();
     }

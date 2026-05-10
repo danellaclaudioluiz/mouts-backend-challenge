@@ -1,6 +1,7 @@
 using Ambev.DeveloperEvaluation.Domain.Entities;
 using Ambev.DeveloperEvaluation.Domain.Enums;
 using Ambev.DeveloperEvaluation.Unit.Domain.Entities.TestData;
+using FluentAssertions;
 using Xunit;
 
 namespace Ambev.DeveloperEvaluation.Unit.Domain.Entities;
@@ -25,7 +26,7 @@ public class UserTests
         user.Activate();
 
         // Assert
-        Assert.Equal(UserStatus.Active, user.Status);
+        user.Status.Should().Be(UserStatus.Active);
     }
 
     /// <summary>
@@ -42,7 +43,7 @@ public class UserTests
         user.Suspend();
 
         // Assert
-        Assert.Equal(UserStatus.Suspended, user.Status);
+        user.Status.Should().Be(UserStatus.Suspended);
     }
 
     /// <summary>
@@ -58,8 +59,8 @@ public class UserTests
         var result = user.Validate();
 
         // Assert
-        Assert.True(result.IsValid);
-        Assert.Empty(result.Errors);
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().BeEmpty();
     }
 
     /// <summary>
@@ -83,7 +84,7 @@ public class UserTests
         var result = user.Validate();
 
         // Assert
-        Assert.False(result.IsValid);
-        Assert.NotEmpty(result.Errors);
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().NotBeEmpty();
     }
 }

@@ -50,7 +50,9 @@ public class CancelSaleHandlerTests
         sale.IsCancelled.Should().BeTrue();
         await _saleRepository.Received(1).UpdateAsync(sale, Arg.Any<CancellationToken>());
         await _eventPublisher.Received(1).PublishAsync(
-            Arg.Is<IDomainEvent>(e => e is SaleCancelledEvent),
+            Arg.Is<IDomainEvent>(e => e is SaleCancelledEvent
+                && ((SaleCancelledEvent)e).SaleId == sale.Id
+                && ((SaleCancelledEvent)e).SaleNumber == sale.SaleNumber),
             Arg.Any<CancellationToken>());
     }
 

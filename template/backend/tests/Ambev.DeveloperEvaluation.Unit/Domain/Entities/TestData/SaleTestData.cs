@@ -24,11 +24,15 @@ public static class SaleTestData
 
         for (var i = 0; i < itemCount; i++)
         {
+            // Round to 2 dp — UnitPrice maps to numeric(18,2). Letting Bogus
+            // emit a 28-digit decimal would yield prices the DB cannot store
+            // round-trip-equal, so any assertion that compares the generated
+            // value to the persisted one would be flaky.
             sale.AddItem(
                 productId: Guid.NewGuid(),
                 productName: Faker.Commerce.ProductName(),
                 quantity: Faker.Random.Int(1, 3),
-                unitPrice: Faker.Random.Decimal(1m, 100m));
+                unitPrice: Math.Round(Faker.Random.Decimal(1m, 100m), 2, MidpointRounding.AwayFromZero));
         }
 
         return sale;

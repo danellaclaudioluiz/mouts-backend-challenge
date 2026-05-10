@@ -20,28 +20,31 @@ public class RateLimitEndpointTests : IClassFixture<RateLimitedSalesApiFactory>
         _client = factory.CreateClient();
     }
 
-    [Fact(DisplayName = "API surface returns 429 once the per-partition limit is breached")]
+    [Fact(DisplayName = "API surface returns 429 EXACTLY after PermitLimit requests in the same window")]
     public async Task ApiSurface_OverLimit_Returns429()
     {
         await _factory.ResetDatabaseAsync();
 
-        // Hammer a cheap-but-rate-limited route. We use GET on the list
-        // endpoint with a random page so the response itself is small. All
-        // requests come from loopback => same partition => same limiter.
+        // Hammer a cheap-but-rate-limited route. Single partition (loopback)
+        // so every request burns a token from the same FixedWindowLimiter.
         var hits = new List<HttpStatusCode>();
-        for (var i = 0; i < RateLimitedSalesApiFactory.PermitLimit + 5; i++)
+        for (var i = 0; i < RateLimitedSalesApiFactory.PermitLimit + 3; i++)
         {
             var response = await _client.GetAsync("/api/v1/sales?_page=1&_size=1");
             hits.Add(response.StatusCode);
         }
 
-        hits.Count(c => c == HttpStatusCode.TooManyRequests).Should().BeGreaterThan(0,
-            $"after {RateLimitedSalesApiFactory.PermitLimit} permits the fixed-window limiter " +
-            $"must start returning 429 (observed: {string.Join(", ", hits.Select(c => (int)c))})");
-
-        // The early calls must succeed — otherwise the API was broken before
-        // the limiter even kicked in, and the 429s would be a false positive.
+        // The fixed-window limiter must hand out EXACTLY PermitLimit 200s and
+        // then flip every subsequent call to 429. A "≥ 1 × 429" check would
+        // pass if the limiter incorrectly burned two tokens per request, or
+        // if it gave out one extra permit.
         hits.Take(RateLimitedSalesApiFactory.PermitLimit)
-            .Should().Contain(HttpStatusCode.OK);
+            .Should().AllBeEquivalentTo(HttpStatusCode.OK,
+                $"the first {RateLimitedSalesApiFactory.PermitLimit} requests must each spend a permit cleanly");
+
+        hits.Skip(RateLimitedSalesApiFactory.PermitLimit)
+            .Should().AllBeEquivalentTo(HttpStatusCode.TooManyRequests,
+                $"every request after permit #{RateLimitedSalesApiFactory.PermitLimit} must be rejected with 429 inside the same window " +
+                $"(observed: {string.Join(", ", hits.Select(c => (int)c))})");
     }
 }

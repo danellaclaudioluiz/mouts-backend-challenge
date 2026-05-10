@@ -41,8 +41,21 @@ public class CreateSaleHandlerTests
         await _saleRepository.Received(1).CreateAsync(
             Arg.Is<Sale>(s => s.SaleNumber == command.SaleNumber),
             Arg.Any<CancellationToken>());
+        // Match the event by SHAPE (SaleNumber, CustomerId, BranchId, ItemCount > 0)
+        // rather than just by type. Asserting only "is SaleCreatedEvent" would
+        // mask a regression that ships a Guid.Empty SaleId or a 0 ItemCount
+        // downstream — exactly the kind of bug a consumer cannot recover from.
+        // Expression trees in NSubstitute's Arg.Is don't allow `is T t`
+        // patterns with capture — fall back to a typed cast inside the
+        // predicate. Still validates by shape, not just by type.
         await _eventPublisher.Received().PublishAsync(
-            Arg.Is<IDomainEvent>(e => e is SaleCreatedEvent),
+            Arg.Is<IDomainEvent>(e => e is SaleCreatedEvent
+                && ((SaleCreatedEvent)e).SaleNumber == command.SaleNumber
+                && ((SaleCreatedEvent)e).CustomerId == command.CustomerId
+                && ((SaleCreatedEvent)e).BranchId == command.BranchId
+                && ((SaleCreatedEvent)e).ItemCount == command.Items.Count
+                && ((SaleCreatedEvent)e).TotalAmount > 0m
+                && ((SaleCreatedEvent)e).SaleId != Guid.Empty),
             Arg.Any<CancellationToken>());
     }
 
