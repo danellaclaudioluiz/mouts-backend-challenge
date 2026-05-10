@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Distributed;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -9,7 +9,7 @@ namespace Ambev.DeveloperEvaluation.WebApi.Middleware;
 /// Honours the <c>Idempotency-Key</c> request header on POST endpoints.
 /// </summary>
 /// <remarks>
-/// Behavior matches Stripe's well-known semantics:
+/// Behaviour matches Stripe's well-known semantics:
 /// <list type="bullet">
 ///   <item>Only successful responses (2xx) are cached. 4xx and 5xx remain
 ///         retryable with the same key — the next attempt re-runs the
@@ -17,13 +17,12 @@ namespace Ambev.DeveloperEvaluation.WebApi.Middleware;
 ///   <item>The cache entry is keyed by path + header value AND fingerprinted
 ///         with a SHA-256 hash of the request body. Using the same
 ///         Idempotency-Key with a different payload returns 422
-///         Unprocessable Entity, so a buggy or malicious caller cannot
-///         accidentally read the response from someone else's request.</item>
+///         Unprocessable Entity.</item>
 /// </list>
-/// Backed by IMemoryCache with a 24-hour TTL — fine for a single instance.
-/// In production, swap for IDistributedCache (Redis already in
-/// docker-compose) so the key still works after a restart or behind a load
-/// balancer.
+/// Backed by <see cref="IDistributedCache"/> (24h TTL). In production this
+/// resolves to Redis (configured via the <c>Redis</c> connection string) so
+/// the key works across pods and survives restarts; in development it falls
+/// back to an in-memory implementation.
 /// </remarks>
 public class IdempotencyMiddleware
 {
@@ -37,12 +36,12 @@ public class IdempotencyMiddleware
     };
 
     private readonly RequestDelegate _next;
-    private readonly IMemoryCache _cache;
+    private readonly IDistributedCache _cache;
     private readonly ILogger<IdempotencyMiddleware> _logger;
 
     public IdempotencyMiddleware(
         RequestDelegate next,
-        IMemoryCache cache,
+        IDistributedCache cache,
         ILogger<IdempotencyMiddleware> logger)
     {
         _next = next;
@@ -63,8 +62,16 @@ public class IdempotencyMiddleware
         var bodyHash = await HashRequestBodyAsync(context.Request);
         var cacheKey = $"idem:{context.Request.Path}:{keys}";
 
-        if (_cache.TryGetValue<CachedResponse>(cacheKey, out var cached) && cached is not null)
+        var cachedBytes = await _cache.GetAsync(cacheKey, context.RequestAborted);
+        if (cachedBytes is not null)
         {
+            var cached = JsonSerializer.Deserialize<CachedResponse>(cachedBytes);
+            if (cached is null)
+            {
+                await _next(context);
+                return;
+            }
+
             if (cached.RequestHash != bodyHash)
             {
                 await WriteIdempotencyMismatchAsync(context, keys.ToString());
@@ -92,11 +99,17 @@ public class IdempotencyMiddleware
             // Idempotency-Key after fixing a 4xx and get a fresh attempt.
             if (context.Response.StatusCode is >= 200 and < 300)
             {
-                _cache.Set(cacheKey, new CachedResponse(
+                var entry = new CachedResponse(
                     context.Response.StatusCode,
                     context.Response.ContentType ?? "application/json",
                     body,
-                    bodyHash), CacheTtl);
+                    bodyHash);
+
+                await _cache.SetAsync(
+                    cacheKey,
+                    JsonSerializer.SerializeToUtf8Bytes(entry),
+                    new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = CacheTtl },
+                    context.RequestAborted);
             }
 
             await originalBody.WriteAsync(body);

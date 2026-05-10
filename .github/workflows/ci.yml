@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: build + unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: template/backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore Ambev.DeveloperEvaluation.sln
+
+      - name: Build
+        run: dotnet build Ambev.DeveloperEvaluation.sln --configuration Release --no-restore
+
+      - name: Verify formatting
+        run: dotnet format Ambev.DeveloperEvaluation.sln --verify-no-changes --no-restore --verbosity diagnostic
+        continue-on-error: true
+
+      - name: Unit tests
+        run: |
+          dotnet test tests/Ambev.DeveloperEvaluation.Unit/Ambev.DeveloperEvaluation.Unit.csproj \
+            --configuration Release \
+            --no-build \
+            --logger "trx;LogFileName=unit.trx" \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./TestResults
+
+      - name: Publish test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: template/backend/TestResults
+
+  integration-test:
+    name: integration tests (Testcontainers)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: template/backend
+    # Testcontainers needs a Docker socket; ubuntu-latest already provides it.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore Ambev.DeveloperEvaluation.sln
+
+      - name: Build
+        run: dotnet build Ambev.DeveloperEvaluation.sln --configuration Release --no-restore
+
+      - name: Integration tests
+        run: |
+          dotnet test tests/Ambev.DeveloperEvaluation.Integration/Ambev.DeveloperEvaluation.Integration.csproj \
+            --configuration Release \
+            --no-build \
+            --logger "trx;LogFileName=integration.trx"
+
+  secret-scan:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

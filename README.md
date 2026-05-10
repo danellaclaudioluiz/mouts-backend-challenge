@@ -89,13 +89,13 @@ public (no `[Authorize]`).
 
 | Verb | Route | Description |
 |---|---|---|
-| `POST` | `/api/sales` | Create a sale (header + items). Honours `Idempotency-Key`. |
-| `GET` | `/api/sales/{id}` | Get a sale by id (full body with items). |
-| `GET` | `/api/sales` | List sales (paginated, filtered, ordered) — header-only summaries. |
-| `PUT` | `/api/sales/{id}` | Diff-based update: existing items keep their id when only quantity/price changes. |
-| `DELETE` | `/api/sales/{id}` | Hard-delete a sale and its items (cascade). |
-| `PATCH` | `/api/sales/{id}/cancel` | Soft-cancel a sale (idempotent). |
-| `PATCH` | `/api/sales/{id}/items/{itemId}/cancel` | Cancel a single line and recalculate the total. |
+| `POST` | `/api/v1/sales` | Create a sale (header + items). Honours `Idempotency-Key`. |
+| `GET` | `/api/v1/sales/{id}` | Get a sale by id (full body with items). |
+| `GET` | `/api/v1/sales` | List sales (paginated, filtered, ordered) — header-only summaries. |
+| `PUT` | `/api/v1/sales/{id}` | Diff-based update: existing items keep their id when only quantity/price changes. |
+| `DELETE` | `/api/v1/sales/{id}` | Hard-delete a sale and its items (cascade). |
+| `PATCH` | `/api/v1/sales/{id}/cancel` | Soft-cancel a sale (idempotent). |
+| `PATCH` | `/api/v1/sales/{id}/items/{itemId}/cancel` | Cancel a single line and recalculate the total. |
 
 The list endpoint follows the conventions in
 [`/.doc/general-api.md`](.doc/general-api.md): `_page`, `_size`, `_order`,
@@ -117,10 +117,10 @@ Errors come back as RFC 7807 `application/problem+json` payloads:
 
 ### Discount rules
 
-Per product, across non-cancelled lines. Adding the same product twice
-with **different unit price or product name** is rejected — caller must
-consolidate before sending. Same product with the same price merges
-quantity so the 20-cap can't be bypassed by splitting lines.
+Per product, across non-cancelled lines. Each `ProductId` may appear
+**at most once** in a sale's items — callers consolidate before sending,
+which keeps Create and Update consistent and makes the 20-cap
+unbypassable by splitting lines.
 
 | Quantity (per product) | Discount |
 |---|---|
@@ -132,31 +132,50 @@ quantity so the 20-cap can't be bypassed by splitting lines.
 ### Domain events & outbox
 
 Each Sales handler stages events into an `OutboxMessages` table inside the
-same transaction that persists the aggregate, and a hosted background
-service (`OutboxDispatcherService`) polls the table every 5 seconds and
-emits each pending message via the application log — so events survive a
-crash between SaveChanges and publish. To replace the logger with a real
-broker, swap the body of `OutboxDispatcherService.DispatchPendingAsync`.
+same transaction that persists the aggregate. A hosted background service
+(`OutboxDispatcherService`) polls the table every 5 seconds with a
+`SELECT … FOR UPDATE SKIP LOCKED` so multiple instances cooperate without
+duplicating dispatches, marks each row processed only **after** a
+successful publish (at-least-once semantics), and tracks attempt count +
+last error per row for retry visibility.
 
-Four event types raised:
+Events use stable wire aliases (`[EventType("…")]`) decoupled from the
+CLR type, so a class rename or namespace move does not invalidate enqueued
+rows or downstream consumers:
 
-- `SaleCreatedEvent` — on POST
-- `SaleModifiedEvent` — on PUT
-- `SaleCancelledEvent` — on PATCH `/cancel`
-- `ItemCancelledEvent` — on PATCH `/items/{itemId}/cancel`
+| Event class | Wire alias |
+|---|---|
+| `SaleCreatedEvent` | `sale.created.v1` |
+| `SaleModifiedEvent` | `sale.modified.v1` |
+| `SaleCancelledEvent` | `sale.cancelled.v1` |
+| `ItemCancelledEvent` | `sale.item_cancelled.v1` |
 
 ### Concurrency, idempotency, observability
 
-- **Optimistic concurrency** on `Sale` via Postgres `xmin` (zero schema
-  cost). Concurrent PUTs on the same sale produce 409.
-- **`Idempotency-Key`** header on POST `/api/sales` replays the cached
-  response for the same key/path for 24 hours. Backed by `IMemoryCache`
-  for now — swap for Redis (already in `docker-compose.yml`) for
-  multi-instance deployments.
+- **API versioning**: routes live at `/api/v{version}/…` via
+  `Asp.Versioning.Mvc`. Default version is 1.0 and the
+  `api-supported-versions` response header reports the available range.
+- **Optimistic concurrency** on `Sale` via Postgres `xmin`. Concurrent
+  PUTs on the same sale produce 409.
+- **HTTP `ETag` / `If-Match`**: `GET /api/v1/sales/{id}` returns an `ETag`
+  derived from the row version. `PUT` and `DELETE` accept `If-Match`;
+  a stale value returns 412 Precondition Failed.
+- **`Idempotency-Key`** header on POST replays only successful (2xx)
+  responses, fingerprinted with a SHA-256 of the request body — reusing
+  the same key with a different body returns 422. Backed by
+  `IDistributedCache`: Redis when `ConnectionStrings:Redis` is set
+  (multi-pod safe), in-memory fallback otherwise.
 - **Health probes**: `/health/live` (process), `/health/ready` (Postgres
-  via `AddDbContextCheck`), `/health` (everything).
-- **Structured logging** via Serilog (configurable per environment).
-  Outbox dispatch and exception middleware emit structured logs.
+  via `AddDbContextCheck`), `/health` (full report).
+- **CORS** with restrictive default; configure allowed origins via
+  `Cors:AllowedOrigins`.
+- **Rate limiting**: 100 requests per minute per IP on the controller
+  surface (fixed-window). Returns 429 when exhausted.
+- **Structured logging** via Serilog. Outbox dispatch and exception
+  middleware emit structured logs.
+- **OpenTelemetry** traces (ASP.NET Core, HTTP client, EF Core) and
+  metrics (ASP.NET Core, HTTP client, runtime). Exports via OTLP when
+  `OpenTelemetry:OtlpEndpoint` (or `OTEL_EXPORTER_OTLP_ENDPOINT`) is set.
 
 ### Running locally
 
@@ -189,6 +208,11 @@ For production, set both via environment variables:
 ```bash
 ConnectionStrings__DefaultConnection="Host=...;Port=5432;..."
 Jwt__SecretKey="<at least 32 bytes>"
+
+# Optional, but recommended in multi-pod deployments
+ConnectionStrings__Redis="redis-host:6379"
+Cors__AllowedOrigins__0="https://app.example.com"
+OTEL_EXPORTER_OTLP_ENDPOINT="https://otel-collector.internal:4317"
 ```
 
 Or, for local development without committing secrets:
@@ -217,6 +241,18 @@ dotnet test
   in a [Testcontainers](https://dotnet.testcontainers.org/) container.
   **Requires a working Docker daemon.** Boots once per fixture; tests
   share the container.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs three jobs on every push and pull request:
+
+- **build-test** — `dotnet restore`, `dotnet build` (Release),
+  `dotnet format --verify-no-changes`, and the unit test suite with
+  Coverlet collection. Test results are uploaded as a workflow artifact.
+- **integration-test** — runs the Testcontainers Postgres suite. The
+  GitHub-hosted `ubuntu-latest` runner ships with a Docker daemon, so no
+  extra services are needed.
+- **secret-scan** — `gitleaks/gitleaks-action` on the full history.
 
 ### Coverage report
 

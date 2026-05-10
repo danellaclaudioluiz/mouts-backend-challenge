@@ -11,6 +11,9 @@ using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Serilog;
 using System.Threading.RateLimiting;
 
@@ -32,7 +35,23 @@ public class Program
 
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddMemoryCache();
+
+            // Idempotency cache: Redis when configured (multi-pod safe), in-memory
+            // fallback otherwise. The 'Redis' connection string keeps the
+            // multi-instance Idempotency-Key story working under a load balancer.
+            var redisConnection = builder.Configuration.GetConnectionString("Redis");
+            if (!string.IsNullOrWhiteSpace(redisConnection))
+            {
+                builder.Services.AddStackExchangeRedisCache(opts =>
+                {
+                    opts.Configuration = redisConnection;
+                    opts.InstanceName = "ambev-sales:";
+                });
+            }
+            else
+            {
+                builder.Services.AddDistributedMemoryCache();
+            }
 
             builder.Services.AddApiVersioning(options =>
             {
@@ -106,6 +125,39 @@ public class Program
             );
 
             builder.Services.AddJwtAuthentication(builder.Configuration);
+
+            // OpenTelemetry — traces + metrics for the request pipeline, EF
+            // Core SQL, and outbound HTTP. Exports via OTLP when an endpoint is
+            // configured (OTEL_EXPORTER_OTLP_ENDPOINT env var or
+            // OpenTelemetry:OtlpEndpoint config); otherwise the providers are
+            // registered without an exporter so application code can still
+            // emit spans/metrics for in-process listeners.
+            var otlpEndpoint =
+                builder.Configuration["OpenTelemetry:OtlpEndpoint"] ??
+                Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+
+            builder.Services.AddOpenTelemetry()
+                .ConfigureResource(r => r.AddService(
+                    serviceName: "ambev.developerevaluation.webapi",
+                    serviceVersion: typeof(Program).Assembly.GetName().Version?.ToString()))
+                .WithTracing(tracing =>
+                {
+                    tracing
+                        .AddAspNetCoreInstrumentation()
+                        .AddHttpClientInstrumentation()
+                        .AddEntityFrameworkCoreInstrumentation();
+                    if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+                        tracing.AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint));
+                })
+                .WithMetrics(metrics =>
+                {
+                    metrics
+                        .AddAspNetCoreInstrumentation()
+                        .AddHttpClientInstrumentation()
+                        .AddRuntimeInstrumentation();
+                    if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+                        metrics.AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint));
+                });
 
             builder.RegisterDependencies();
 
