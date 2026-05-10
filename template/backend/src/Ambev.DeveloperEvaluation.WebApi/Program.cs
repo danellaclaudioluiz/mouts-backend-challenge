@@ -126,12 +126,29 @@ public class Program
                     "Set it in appsettings.Development.json, user-secrets, or the " +
                     "ConnectionStrings__DefaultConnection environment variable.");
 
-            builder.Services.AddDbContext<DefaultContext>(options =>
-                options.UseNpgsql(
-                    connectionString,
-                    b => b.MigrationsAssembly("Ambev.DeveloperEvaluation.ORM")
-                )
-            );
+            // Pool DbContext instances (with the Model + change tracker
+            // recycled across requests) and tune Npgsql:
+            //   - retry on transient failures so brief network blips and PG
+            //     failovers don't cascade into 5xx;
+            //   - a 15s command timeout caps any runaway query;
+            //   - sensitive-data logging stays off (avoids leaking parameters
+            //     to logs in production).
+            // The connection string itself controls Pooling/MinPoolSize/
+            // MaxPoolSize/Keepalive — see appsettings.Development.json for the
+            // tuned dev value and the README for the production guidance.
+            builder.Services.AddDbContextPool<DefaultContext>(options =>
+                options
+                    .UseNpgsql(connectionString, npg =>
+                    {
+                        npg.MigrationsAssembly("Ambev.DeveloperEvaluation.ORM");
+                        npg.EnableRetryOnFailure(
+                            maxRetryCount: 3,
+                            maxRetryDelay: TimeSpan.FromSeconds(2),
+                            errorCodesToAdd: null);
+                        npg.CommandTimeout(15);
+                    })
+                    .EnableSensitiveDataLogging(false),
+                poolSize: 256);
 
             builder.Services.AddJwtAuthentication(builder.Configuration);
 
