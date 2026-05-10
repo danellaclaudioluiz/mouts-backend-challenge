@@ -1,3 +1,5 @@
+using Ambev.DeveloperEvaluation.Domain.Exceptions;
+
 namespace Ambev.DeveloperEvaluation.Domain.Services;
 
 /// <summary>
