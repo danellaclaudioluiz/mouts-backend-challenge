@@ -95,7 +95,8 @@ public class SalesController : BaseController
             Data = result.Items,
             CurrentPage = result.Page,
             TotalPages = result.TotalPages,
-            TotalCount = result.TotalCount
+            TotalCount = result.TotalCount,
+            NextCursor = result.NextCursor
         });
     }
 

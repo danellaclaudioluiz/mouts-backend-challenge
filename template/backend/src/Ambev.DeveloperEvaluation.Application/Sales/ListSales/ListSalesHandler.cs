@@ -23,6 +23,7 @@ public class ListSalesHandler : IRequestHandler<ListSalesQuery, ListSalesResult>
             Page = query.Page,
             Size = query.Size,
             Order = query.Order,
+            Cursor = query.Cursor,
             SaleNumber = query.SaleNumber,
             FromDate = query.FromDate,
             ToDate = query.ToDate,
@@ -31,12 +32,13 @@ public class ListSalesHandler : IRequestHandler<ListSalesQuery, ListSalesResult>
             IsCancelled = query.IsCancelled
         };
 
-        var (sales, totalCount) = await _saleRepository.ListAsync(filter, cancellationToken);
+        var page = await _saleRepository.ListAsync(filter, cancellationToken);
 
         return new ListSalesResult
         {
-            Items = sales.Select(s => _mapper.Map<SaleSummaryDto>(s)).ToList(),
-            TotalCount = totalCount,
+            Items = page.Items.Select(s => _mapper.Map<SaleSummaryDto>(s)).ToList(),
+            TotalCount = page.TotalCount,
+            NextCursor = page.NextCursor,
             Page = query.Page,
             Size = query.Size
         };

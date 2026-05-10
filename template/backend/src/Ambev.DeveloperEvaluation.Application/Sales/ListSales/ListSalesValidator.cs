@@ -15,6 +15,13 @@ public class ListSalesValidator : AbstractValidator<ListSalesQuery>
                 "Order may only reference these fields: " +
                 string.Join(", ", SaleListFilter.SupportedSortFields) +
                 ". Each clause is '<field>' or '<field> asc|desc'.");
+
+        // Cursor and Page are mutually exclusive pagination modes — silently
+        // honouring one over the other would surprise the caller.
+        RuleFor(q => q.Cursor)
+            .Empty()
+            .When(q => q.Page > 1)
+            .WithMessage("Cursor and Page cannot be combined. Use one or the other.");
     }
 
     private static bool BeAValidOrderExpression(string order)

@@ -5,8 +5,19 @@ namespace Ambev.DeveloperEvaluation.Application.Sales.ListSales;
 public class ListSalesResult
 {
     public IReadOnlyList<SaleSummaryDto> Items { get; set; } = Array.Empty<SaleSummaryDto>();
-    public long TotalCount { get; set; }
+
+    /// <summary>
+    /// Total matching rows in offset/page mode. <c>null</c> in cursor
+    /// (keyset) mode — the keyset query does not run a COUNT(*).
+    /// </summary>
+    public long? TotalCount { get; set; }
+
     public int Page { get; set; }
     public int Size { get; set; }
-    public long TotalPages => Size <= 0 ? 0 : (long)Math.Ceiling(TotalCount / (double)Size);
+
+    /// <summary>Opaque cursor for the next page (keyset mode only).</summary>
+    public string? NextCursor { get; set; }
+
+    public long? TotalPages =>
+        TotalCount is null || Size <= 0 ? null : (long)Math.Ceiling(TotalCount.Value / (double)Size);
 }

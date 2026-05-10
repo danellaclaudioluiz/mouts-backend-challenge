@@ -76,12 +76,20 @@ public class SaleRepository : ISaleRepository
         return true;
     }
 
-    public async Task<(IReadOnlyList<SaleSummary> Items, long TotalCount)> ListAsync(
+    public async Task<SalePage> ListAsync(
         SaleListFilter filter,
         CancellationToken cancellationToken = default)
     {
-        var query = _context.Sales.AsNoTracking().AsQueryable();
+        var query = ApplyFilters(_context.Sales.AsNoTracking().AsQueryable(), filter);
+        var size = filter.Size < 1 ? 10 : filter.Size;
 
+        return filter.Cursor is null
+            ? await ListByOffsetAsync(query, filter, size, cancellationToken)
+            : await ListByCursorAsync(query, filter, size, cancellationToken);
+    }
+
+    private static IQueryable<Sale> ApplyFilters(IQueryable<Sale> query, SaleListFilter filter)
+    {
         if (!string.IsNullOrWhiteSpace(filter.SaleNumber))
         {
             var pattern = filter.SaleNumber.Replace('*', '%');
@@ -105,37 +113,70 @@ public class SaleRepository : ISaleRepository
         if (filter.IsCancelled.HasValue)
             query = query.Where(s => s.IsCancelled == filter.IsCancelled.Value);
 
+        return query;
+    }
+
+    private static async Task<SalePage> ListByOffsetAsync(
+        IQueryable<Sale> query, SaleListFilter filter, int size, CancellationToken cancellationToken)
+    {
         var totalCount = await query.LongCountAsync(cancellationToken);
 
         var orderedQuery = string.IsNullOrWhiteSpace(filter.Order)
-            ? query.OrderByDescending(s => s.SaleDate)
+            ? query.OrderByDescending(s => s.SaleDate).ThenByDescending(s => s.Id)
             : query.OrderByDynamic(filter.Order, SaleListFilter.SupportedSortFields);
 
         var page = filter.Page < 1 ? 1 : filter.Page;
-        var size = filter.Size < 1 ? 10 : filter.Size;
 
-        // Project directly to SaleSummary so EF emits a single SELECT against
-        // Sales (no JOIN to SaleItems). ItemCount reads the
-        // ActiveItemsCount column maintained by the aggregate, so the page
-        // query no longer carries a correlated subquery per row.
-        var items = await orderedQuery
+        var items = await ProjectToSummary(orderedQuery
             .Skip((page - 1) * size)
-            .Take(size)
-            .Select(s => new SaleSummary(
-                s.Id,
-                s.SaleNumber,
-                s.SaleDate,
-                s.CustomerId,
-                s.CustomerName,
-                s.BranchId,
-                s.BranchName,
-                s.TotalAmount,
-                s.IsCancelled,
-                s.CreatedAt,
-                s.UpdatedAt,
-                s.ActiveItemsCount))
+            .Take(size))
             .ToListAsync(cancellationToken);
 
-        return (items, totalCount);
+        return new SalePage(items, totalCount, NextCursor: null);
     }
+
+    private static async Task<SalePage> ListByCursorAsync(
+        IQueryable<Sale> query, SaleListFilter filter, int size, CancellationToken cancellationToken)
+    {
+        // Keyset pagination: stable ordering by (SaleDate DESC, Id DESC) and
+        // a composite WHERE that picks up exactly where the previous page
+        // left off — index-friendly, O(log n) per page, no COUNT(*).
+        var (cursorDate, cursorId) = SaleCursor.Decode(filter.Cursor!);
+
+        var keysetQuery = query
+            .Where(s => s.SaleDate < cursorDate
+                        || (s.SaleDate == cursorDate && s.Id.CompareTo(cursorId) < 0))
+            .OrderByDescending(s => s.SaleDate)
+            .ThenByDescending(s => s.Id);
+
+        // Fetch one extra row so we can tell whether a next page exists
+        // without a separate count.
+        var rows = await ProjectToSummary(keysetQuery.Take(size + 1))
+            .ToListAsync(cancellationToken);
+
+        string? nextCursor = null;
+        if (rows.Count > size)
+        {
+            var last = rows[size - 1];
+            nextCursor = SaleCursor.Encode(last.SaleDate, last.Id);
+            rows.RemoveAt(size);
+        }
+
+        return new SalePage(rows, TotalCount: null, nextCursor);
+    }
+
+    private static IQueryable<SaleSummary> ProjectToSummary(IQueryable<Sale> source) =>
+        source.Select(s => new SaleSummary(
+            s.Id,
+            s.SaleNumber,
+            s.SaleDate,
+            s.CustomerId,
+            s.CustomerName,
+            s.BranchId,
+            s.BranchName,
+            s.TotalAmount,
+            s.IsCancelled,
+            s.CreatedAt,
+            s.UpdatedAt,
+            s.ActiveItemsCount));
 }

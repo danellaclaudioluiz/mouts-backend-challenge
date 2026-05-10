@@ -19,6 +19,14 @@ public class ListSalesRequest
     [FromQuery(Name = "_order")]
     public string? Order { get; set; }
 
+    /// <summary>
+    /// Opaque cursor from a previous response's <c>nextCursor</c>. Mutually
+    /// exclusive with <c>_page</c> — use this for high-scale pagination
+    /// (O(log n) per page, no COUNT(*) cost).
+    /// </summary>
+    [FromQuery(Name = "_cursor")]
+    public string? Cursor { get; set; }
+
     [FromQuery(Name = "saleNumber")]
     public string? SaleNumber { get; set; }
 

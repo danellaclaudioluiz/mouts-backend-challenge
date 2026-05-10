@@ -31,11 +31,13 @@ public interface ISaleRepository
     Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lists sales matching the supplied filter, paged. Returns the page items
-    /// as header-only summaries (no SaleItem load) alongside the total matching
-    /// row count for the caller to compute paging metadata.
+    /// Lists sales matching the supplied filter. Returns header-only summaries
+    /// (no SaleItem load). When <see cref="SaleListFilter.Cursor"/> is set,
+    /// uses keyset pagination — fast, constant-time per page, no COUNT(*).
+    /// Otherwise uses LIMIT/OFFSET with a row count for the caller to render
+    /// page numbers.
     /// </summary>
-    Task<(IReadOnlyList<SaleSummary> Items, long TotalCount)> ListAsync(
+    Task<SalePage> ListAsync(
         SaleListFilter filter,
         CancellationToken cancellationToken = default);
 }

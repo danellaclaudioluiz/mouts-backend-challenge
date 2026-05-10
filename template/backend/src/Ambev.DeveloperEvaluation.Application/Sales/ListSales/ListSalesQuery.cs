@@ -12,6 +12,13 @@ public class ListSalesQuery : IRequest<ListSalesResult>
     public int Size { get; set; } = 10;
     public string? Order { get; set; }
 
+    /// <summary>
+    /// Opaque cursor from a previous page's <c>NextCursor</c>. When set,
+    /// keyset pagination is used (O(log n), no COUNT(*)). Mutually
+    /// exclusive with <see cref="Page"/>.
+    /// </summary>
+    public string? Cursor { get; set; }
+
     public string? SaleNumber { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
