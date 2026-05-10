@@ -155,11 +155,14 @@ rows or downstream consumers:
 - **API versioning**: routes live at `/api/v{version}/…` via
   `Asp.Versioning.Mvc`. Default version is 1.0 and the
   `api-supported-versions` response header reports the available range.
-- **Optimistic concurrency** on `Sale` via Postgres `xmin`. Concurrent
-  PUTs on the same sale produce 409.
+- **Optimistic concurrency** on `Sale` via a `bigint RowVersion` column
+  maintained by a Postgres BEFORE UPDATE trigger
+  (`ambev_sales_bump_rowversion`). Monotonic per row and unaffected by
+  VACUUM FREEZE — concurrent PUTs on the same sale produce 409.
 - **HTTP `ETag` / `If-Match`**: `GET /api/v1/sales/{id}` returns an `ETag`
-  derived from the row version. `PUT` and `DELETE` accept `If-Match`;
-  a stale value returns 412 Precondition Failed.
+  derived from the row version. `POST`/`PUT`/`PATCH` also emit `ETag` so
+  clients can chain writes without an extra `GET`. `PUT` and `DELETE`
+  accept `If-Match`; a stale value returns 412 Precondition Failed.
 - **`Idempotency-Key`** header on POST replays only successful (2xx)
   responses, fingerprinted with a SHA-256 of the request body — reusing
   the same key with a different body returns 422. Backed by
@@ -169,13 +172,56 @@ rows or downstream consumers:
   via `AddDbContextCheck`), `/health` (full report).
 - **CORS** with restrictive default; configure allowed origins via
   `Cors:AllowedOrigins`.
-- **Rate limiting**: 100 requests per minute per IP on the controller
-  surface (fixed-window). Returns 429 when exhausted.
-- **Structured logging** via Serilog. Outbox dispatch and exception
-  middleware emit structured logs.
+- **Rate limiting**: 100 requests per minute per principal (claim id
+  first, IP fallback) on the controller surface (fixed-window). Returns
+  429 when exhausted.
+- **Structured logging** via Serilog enriched with TraceId/SpanId so
+  log lines join their OpenTelemetry traces.
 - **OpenTelemetry** traces (ASP.NET Core, HTTP client, EF Core) and
   metrics (ASP.NET Core, HTTP client, runtime). Exports via OTLP when
   `OpenTelemetry:OtlpEndpoint` (or `OTEL_EXPORTER_OTLP_ENDPOINT`) is set.
+
+### Database tuning
+
+The schema and connection setup are tuned for production-style load:
+
+- **DbContext is pooled** (`AddDbContextPool`, poolSize 256) with EF
+  Core's `EnableRetryOnFailure(3, 2s)` and a 15-second command timeout.
+  The connection string declares
+  `Pooling=true; Minimum Pool Size=10; Maximum Pool Size=200;
+  Keepalive=30` so brief network blips and PG failovers don't cascade
+  into 5xx.
+- **Indexes** matched to query patterns:
+  - `Users.Email` and `Users.Username` are unique (auth path goes
+    through a btree index, not a seq scan).
+  - `Sales(CustomerId, SaleDate)` and `Sales(BranchId, SaleDate)`
+    composite for the listing patterns.
+  - Two partial indexes on `Sales(SaleDate)` — one for active rows
+    (`WHERE IsCancelled = false`), one for cancelled — keep both flavours
+    of the listing fast without bloating a single index.
+  - `OutboxMessages(OccurredAt) WHERE ProcessedAt IS NULL` is a real
+    partial index, so the dispatcher's hot-path tree stays small even
+    after months of dispatched rows.
+  - `SaleItems(SaleId, ProductId) UNIQUE WHERE NOT IsCancelled`
+    encodes the aggregate's per-product invariant at the database level.
+  - `pg_trgm` GIN index on `Sales.SaleNumber` so substring filters
+    (`%foo%`) use the index instead of seq-scanning.
+- **CHECK constraints** on `SaleItems`: `Quantity` ∈ [1, 20],
+  `UnitPrice > 0`, `Discount ≥ 0`, `TotalAmount ≥ 0` — defence-in-depth
+  against bypassing the aggregate via raw SQL.
+- **Outbox cleanup** runs in 5,000-row chunks, each in its own short
+  transaction, so autovacuum keeps up and WAL doesn't spike. The
+  dispatcher dead-letters messages after 10 failed attempts (the row
+  stays in the table with `LastError` populated for inspection).
+
+### Known future work (not in scope for the challenge)
+
+- **LISTEN/NOTIFY** in the outbox dispatcher to wake up immediately on
+  publish instead of polling every 5s.
+- **Compiled queries** (`EF.CompileAsyncQuery`) for the hot
+  `GetByIdAsync` path.
+- **Keyset pagination** (cursor) on `ListSales` to replace the
+  `LongCount` round-trip on multi-million-row tables.
 
 ### Running locally
 
