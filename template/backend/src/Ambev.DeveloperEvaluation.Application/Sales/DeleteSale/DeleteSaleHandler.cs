@@ -19,6 +19,17 @@ public class DeleteSaleHandler : IRequestHandler<DeleteSaleCommand, Unit>
 
     public async Task<Unit> Handle(DeleteSaleCommand command, CancellationToken cancellationToken)
     {
+        if (command.ExpectedRowVersion.HasValue)
+        {
+            var sale = await _saleRepository.GetByIdAsync(command.Id, cancellationToken)
+                ?? throw new ResourceNotFoundException("Sale", command.Id);
+
+            if (sale.RowVersion != command.ExpectedRowVersion.Value)
+                throw new PreconditionFailedException(
+                    $"Sale '{command.Id}' has been modified since it was read. " +
+                    "Refresh and retry with the new ETag.");
+        }
+
         var deleted = await _saleRepository.DeleteAsync(command.Id, cancellationToken);
         if (!deleted)
             throw new ResourceNotFoundException("Sale", command.Id);

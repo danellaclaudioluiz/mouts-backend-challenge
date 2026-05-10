@@ -31,11 +31,13 @@ public class SaleConfiguration : IEntityTypeConfiguration<Sale>
         builder.Property(s => s.CreatedAt).IsRequired();
         builder.Property(s => s.UpdatedAt);
 
-        // Optimistic concurrency via Postgres xmin (transaction id of last update).
-        // Free of schema cost — every row already has it — and EF Core treats it
-        // as a concurrency token, raising DbUpdateConcurrencyException on stale
-        // writes. Maps as a shadow property so Sale stays infra-agnostic.
-        builder.Property<uint>("xmin")
+        // Optimistic concurrency via Postgres xmin (transaction id of last
+        // update). Mapped to the public Sale.RowVersion so the value is visible
+        // to handlers and to API clients (which can derive an HTTP ETag from
+        // it for If-Match preconditions). EF Core raises
+        // DbUpdateConcurrencyException on stale writes.
+        builder.Property(s => s.RowVersion)
+            .HasColumnName("xmin")
             .HasColumnType("xid")
             .ValueGeneratedOnAddOrUpdate()
             .IsConcurrencyToken();

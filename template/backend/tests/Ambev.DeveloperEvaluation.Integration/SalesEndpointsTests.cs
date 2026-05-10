@@ -42,35 +42,35 @@ public class SalesEndpointsTests : IClassFixture<SalesApiFactory>
         }
     };
 
-    [Fact(DisplayName = "POST /api/sales creates a sale and returns Location")]
+    [Fact(DisplayName = "POST /api/v1/sales creates a sale and returns Location")]
     public async Task CreateSale_HappyPath()
     {
         var saleNumber = $"S-{Guid.NewGuid():N}";
 
-        var response = await _client.PostAsJsonAsync("/api/sales", BuildPayload(saleNumber));
+        var response = await _client.PostAsJsonAsync("/api/v1/sales", BuildPayload(saleNumber));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Location.Should().NotBeNull();
     }
 
-    [Fact(DisplayName = "POST /api/sales rejects duplicate SaleNumber with 409")]
+    [Fact(DisplayName = "POST /api/v1/sales rejects duplicate SaleNumber with 409")]
     public async Task CreateSale_Duplicate_Returns409()
     {
         var saleNumber = $"S-{Guid.NewGuid():N}";
 
-        var first = await _client.PostAsJsonAsync("/api/sales", BuildPayload(saleNumber));
+        var first = await _client.PostAsJsonAsync("/api/v1/sales", BuildPayload(saleNumber));
         first.EnsureSuccessStatusCode();
 
-        var second = await _client.PostAsJsonAsync("/api/sales", BuildPayload(saleNumber));
+        var second = await _client.PostAsJsonAsync("/api/v1/sales", BuildPayload(saleNumber));
 
         second.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
-    [Fact(DisplayName = "POST /api/sales rejects qty > 20 with 400")]
+    [Fact(DisplayName = "POST /api/v1/sales rejects qty > 20 with 400")]
     public async Task CreateSale_QuantityTooHigh_Returns400()
     {
         var response = await _client.PostAsJsonAsync(
-            "/api/sales",
+            "/api/v1/sales",
             BuildPayload($"S-{Guid.NewGuid():N}", quantity: 21));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -78,10 +78,10 @@ public class SalesEndpointsTests : IClassFixture<SalesApiFactory>
         body.Should().Contain("Quantity");
     }
 
-    [Fact(DisplayName = "GET /api/sales/{id} on missing id returns 404")]
+    [Fact(DisplayName = "GET /api/v1/sales/{id} on missing id returns 404")]
     public async Task GetSale_Missing_Returns404()
     {
-        var response = await _client.GetAsync($"/api/sales/{Guid.NewGuid()}");
+        var response = await _client.GetAsync($"/api/v1/sales/{Guid.NewGuid()}");
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -91,13 +91,13 @@ public class SalesEndpointsTests : IClassFixture<SalesApiFactory>
         var idempotencyKey = Guid.NewGuid().ToString();
         var payload = BuildPayload($"S-{Guid.NewGuid():N}");
 
-        var first = await SendIdempotentPostAsync("/api/sales", payload, idempotencyKey);
+        var first = await SendIdempotentPostAsync("/api/v1/sales", payload, idempotencyKey);
         var firstBody = await first.Content.ReadAsStringAsync();
         first.StatusCode.Should().Be(HttpStatusCode.Created);
 
         // Replay with the same key + same body — even though the sale-number
         // conflict would normally produce 409, the cached 201 is returned.
-        var replay = await SendIdempotentPostAsync("/api/sales", payload, idempotencyKey);
+        var replay = await SendIdempotentPostAsync("/api/v1/sales", payload, idempotencyKey);
         var replayBody = await replay.Content.ReadAsStringAsync();
 
         replay.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -109,11 +109,11 @@ public class SalesEndpointsTests : IClassFixture<SalesApiFactory>
     {
         var idempotencyKey = Guid.NewGuid().ToString();
         var first = await SendIdempotentPostAsync(
-            "/api/sales", BuildPayload($"S-{Guid.NewGuid():N}"), idempotencyKey);
+            "/api/v1/sales", BuildPayload($"S-{Guid.NewGuid():N}"), idempotencyKey);
         first.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var second = await SendIdempotentPostAsync(
-            "/api/sales", BuildPayload($"S-{Guid.NewGuid():N}"), idempotencyKey);
+            "/api/v1/sales", BuildPayload($"S-{Guid.NewGuid():N}"), idempotencyKey);
         second.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
@@ -124,13 +124,13 @@ public class SalesEndpointsTests : IClassFixture<SalesApiFactory>
 
         // First attempt: validation error (qty > 20) — must NOT be cached.
         var bad = await SendIdempotentPostAsync(
-            "/api/sales", BuildPayload($"S-{Guid.NewGuid():N}", quantity: 21), idempotencyKey);
+            "/api/v1/sales", BuildPayload($"S-{Guid.NewGuid():N}", quantity: 21), idempotencyKey);
         bad.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         // Same key + same body: still re-runs and still fails — cache miss
         // because the prior 4xx wasn't stored.
         var retrySame = await SendIdempotentPostAsync(
-            "/api/sales", BuildPayload($"S-{Guid.NewGuid():N}", quantity: 21), idempotencyKey);
+            "/api/v1/sales", BuildPayload($"S-{Guid.NewGuid():N}", quantity: 21), idempotencyKey);
         retrySame.StatusCode.Should().BeOneOf(
             HttpStatusCode.BadRequest,
             HttpStatusCode.UnprocessableEntity);
@@ -150,15 +150,15 @@ public class SalesEndpointsTests : IClassFixture<SalesApiFactory>
     public async Task CancelSale_Updates_Flag()
     {
         var saleNumber = $"S-{Guid.NewGuid():N}";
-        var create = await _client.PostAsJsonAsync("/api/sales", BuildPayload(saleNumber));
+        var create = await _client.PostAsJsonAsync("/api/v1/sales", BuildPayload(saleNumber));
         create.EnsureSuccessStatusCode();
         var created = await create.Content.ReadFromJsonAsync<EnvelopedSale>();
         created.Should().NotBeNull();
 
-        var cancel = await _client.PatchAsync($"/api/sales/{created!.Data.Id}/cancel", content: null);
+        var cancel = await _client.PatchAsync($"/api/v1/sales/{created!.Data.Id}/cancel", content: null);
         cancel.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var get = await _client.GetFromJsonAsync<EnvelopedSale>($"/api/sales/{created.Data.Id}");
+        var get = await _client.GetFromJsonAsync<EnvelopedSale>($"/api/v1/sales/{created.Data.Id}");
         get!.Data.IsCancelled.Should().BeTrue();
     }
 

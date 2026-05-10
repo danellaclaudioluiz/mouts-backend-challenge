@@ -10,6 +10,7 @@ using Ambev.DeveloperEvaluation.WebApi.Common;
 using Ambev.DeveloperEvaluation.WebApi.Features.Sales.CreateSale;
 using Ambev.DeveloperEvaluation.WebApi.Features.Sales.ListSales;
 using Ambev.DeveloperEvaluation.WebApi.Features.Sales.UpdateSale;
+using Asp.Versioning;
 using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
@@ -17,7 +18,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace Ambev.DeveloperEvaluation.WebApi.Features.Sales;
 
 [ApiController]
-[Route("api/[controller]")]
+[ApiVersion("1.0")]
+[Route("api/v{version:apiVersion}/[controller]")]
 public class SalesController : BaseController
 {
     private readonly IMediator _mediator;
@@ -62,6 +64,8 @@ public class SalesController : BaseController
     public async Task<IActionResult> GetSale([FromRoute] Guid id, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new GetSaleQuery(id), cancellationToken);
+        Response.Headers.ETag = ETagFor(result.RowVersion);
+
         return Ok(new ApiResponseWithData<SaleDto>
         {
             Success = true,
@@ -94,12 +98,17 @@ public class SalesController : BaseController
         });
     }
 
-    /// <summary>Replaces the sale identified by id (header + items).</summary>
+    /// <summary>
+    /// Replaces the sale identified by id (header + items). If the request
+    /// carries an <c>If-Match</c> header, its value is compared to the current
+    /// sale's ETag — a mismatch returns 412 Precondition Failed.
+    /// </summary>
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponseWithData<SaleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> UpdateSale(
         [FromRoute] Guid id,
@@ -108,7 +117,10 @@ public class SalesController : BaseController
     {
         var command = _mapper.Map<UpdateSaleCommand>(request);
         command.Id = id;
+        command.ExpectedRowVersion = ParseIfMatch(Request.Headers.IfMatch);
+
         var result = await _mediator.Send(command, cancellationToken);
+        Response.Headers.ETag = ETagFor(result.RowVersion);
 
         return Ok(new ApiResponseWithData<SaleDto>
         {
@@ -118,14 +130,19 @@ public class SalesController : BaseController
         });
     }
 
-    /// <summary>Hard-deletes a sale and its items.</summary>
+    /// <summary>
+    /// Hard-deletes a sale and its items. Honours <c>If-Match</c> the same way
+    /// PUT does — a mismatched ETag returns 412.
+    /// </summary>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DeleteSale([FromRoute] Guid id, CancellationToken cancellationToken)
     {
-        await _mediator.Send(new DeleteSaleCommand(id), cancellationToken);
+        var expectedRowVersion = ParseIfMatch(Request.Headers.IfMatch);
+        await _mediator.Send(new DeleteSaleCommand(id, expectedRowVersion), cancellationToken);
         return base.Ok(new ApiResponse { Success = true, Message = "Sale deleted successfully" });
     }
 
@@ -165,5 +182,25 @@ public class SalesController : BaseController
             Message = "Sale item cancelled successfully",
             Data = result
         });
+    }
+
+    /// <summary>Encodes an aggregate's row version as a strong HTTP ETag.</summary>
+    private static string ETagFor(uint rowVersion) => $"\"{rowVersion:x}\"";
+
+    /// <summary>
+    /// Parses an If-Match header into a row version. Returns null if the
+    /// header is absent, "*" (any) or unparseable. The handler then skips the
+    /// precondition; the caller has explicitly opted out of strict ordering.
+    /// </summary>
+    private static uint? ParseIfMatch(Microsoft.Extensions.Primitives.StringValues header)
+    {
+        var value = header.ToString();
+        if (string.IsNullOrWhiteSpace(value) || value == "*") return null;
+
+        var trimmed = value.Trim().Trim('"');
+        return uint.TryParse(trimmed, System.Globalization.NumberStyles.HexNumber,
+            System.Globalization.CultureInfo.InvariantCulture, out var version)
+            ? version
+            : null;
     }
 }

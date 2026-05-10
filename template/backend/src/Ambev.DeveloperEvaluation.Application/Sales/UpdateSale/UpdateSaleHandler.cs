@@ -37,6 +37,11 @@ public class UpdateSaleHandler : IRequestHandler<UpdateSaleCommand, SaleDto>
         var sale = await _saleRepository.GetByIdAsync(command.Id, cancellationToken)
             ?? throw new ResourceNotFoundException("Sale", command.Id);
 
+        if (command.ExpectedRowVersion.HasValue && sale.RowVersion != command.ExpectedRowVersion.Value)
+            throw new PreconditionFailedException(
+                $"Sale '{command.Id}' has been modified since it was read. " +
+                "Refresh and retry with the new ETag.");
+
         sale.UpdateHeader(
             command.SaleDate,
             command.CustomerId,

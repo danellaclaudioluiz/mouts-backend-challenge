@@ -29,6 +29,13 @@ public class Sale : BaseEntity
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
 
+    /// <summary>
+    /// Optimistic concurrency token (Postgres <c>xmin</c>). Increments on every
+    /// row update; clients can derive an HTTP ETag from it for If-Match
+    /// preconditions on PUT/DELETE.
+    /// </summary>
+    public uint RowVersion { get; private set; }
+
     public IReadOnlyCollection<SaleItem> Items => _items.AsReadOnly();
     public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
 

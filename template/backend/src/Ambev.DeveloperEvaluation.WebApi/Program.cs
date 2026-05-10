@@ -6,15 +6,21 @@ using Ambev.DeveloperEvaluation.Common.Validation;
 using Ambev.DeveloperEvaluation.IoC;
 using Ambev.DeveloperEvaluation.ORM;
 using Ambev.DeveloperEvaluation.WebApi.Middleware;
+using Asp.Versioning;
 using FluentValidation;
 using MediatR;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using System.Threading.RateLimiting;
 
 namespace Ambev.DeveloperEvaluation.WebApi;
 
 public class Program
 {
+    public const string DefaultCorsPolicy = "default";
+    public const string ApiRateLimitPolicy = "api";
+
     public static void Main(string[] args)
     {
         try
@@ -27,6 +33,50 @@ public class Program
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddMemoryCache();
+
+            builder.Services.AddApiVersioning(options =>
+            {
+                options.DefaultApiVersion = new ApiVersion(1, 0);
+                options.AssumeDefaultVersionWhenUnspecified = true;
+                options.ReportApiVersions = true;
+            }).AddApiExplorer(options =>
+            {
+                options.GroupNameFormat = "'v'V";
+                options.SubstituteApiVersionInUrl = true;
+            });
+
+            // CORS — restrictive by default (ConfiguredOrigins config key);
+            // wide-open only in Development for local Swagger UI / dev front-ends.
+            builder.Services.AddCors(options =>
+            {
+                options.AddPolicy(DefaultCorsPolicy, policy =>
+                {
+                    var origins = builder.Configuration
+                        .GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+
+                    if (builder.Environment.IsDevelopment() && origins.Length == 0)
+                        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+                    else
+                        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod()
+                            .AllowCredentials();
+                });
+            });
+
+            // Rate limiting: a fixed-window per-IP bucket on the API surface.
+            // Lower the limit per-route or by user via additional policies.
+            builder.Services.AddRateLimiter(options =>
+            {
+                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+                options.AddPolicy(ApiRateLimitPolicy, httpContext =>
+                    RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = 100,
+                            Window = TimeSpan.FromMinutes(1),
+                            QueueLimit = 0
+                        }));
+            });
 
             builder.AddBasicHealthChecks();
 
@@ -88,12 +138,15 @@ public class Program
 
             app.UseHttpsRedirection();
 
+            app.UseCors(DefaultCorsPolicy);
+            app.UseRateLimiter();
+
             app.UseAuthentication();
             app.UseAuthorization();
 
             app.UseBasicHealthChecks();
 
-            app.MapControllers();
+            app.MapControllers().RequireRateLimiting(ApiRateLimitPolicy);
 
             app.Run();
         }

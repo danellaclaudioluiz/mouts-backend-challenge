@@ -67,6 +67,17 @@ namespace Ambev.DeveloperEvaluation.WebApi.Middleware
                     Instance = context.Request.Path
                 });
             }
+            catch (PreconditionFailedException ex)
+            {
+                await WriteProblemAsync(context, new ProblemDetails
+                {
+                    Status = StatusCodes.Status412PreconditionFailed,
+                    Title = "Precondition failed",
+                    Type = "https://httpstatuses.io/412",
+                    Detail = ex.Message,
+                    Instance = context.Request.Path
+                });
+            }
             catch (DomainException ex)
             {
                 await WriteProblemAsync(context, new ProblemDetails
