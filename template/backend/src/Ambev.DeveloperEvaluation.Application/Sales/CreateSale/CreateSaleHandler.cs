@@ -9,10 +9,12 @@ using MediatR;
 namespace Ambev.DeveloperEvaluation.Application.Sales.CreateSale;
 
 /// <summary>
-/// Builds a Sale aggregate from the command, persists it, then publishes
-/// every domain event the aggregate raised. Uniqueness on SaleNumber is
-/// enforced before construction so callers get a clear conflict message
-/// instead of a database constraint violation.
+/// Builds a Sale aggregate from the command, stages every domain event it
+/// raised through the publisher, then persists — both the aggregate and the
+/// outbox messages commit in a single SaveChanges so events never get lost
+/// between the row write and the dispatcher seeing them. Uniqueness on
+/// SaleNumber is enforced before construction so callers get a clear conflict
+/// message instead of a unique-index violation.
 /// </summary>
 public class CreateSaleHandler : IRequestHandler<CreateSaleCommand, SaleDto>
 {
@@ -50,16 +52,14 @@ public class CreateSaleHandler : IRequestHandler<CreateSaleCommand, SaleDto>
 
         sale.MarkCreated();
 
-        var created = await _saleRepository.CreateAsync(sale, cancellationToken);
-        await PublishAndClearEventsAsync(created, cancellationToken);
-
-        return _mapper.Map<SaleDto>(created);
-    }
-
-    private async Task PublishAndClearEventsAsync(Sale sale, CancellationToken cancellationToken)
-    {
+        // Stage events first; the repository's SaveChanges commits both the
+        // sale row and the outbox rows atomically.
         foreach (var domainEvent in sale.DomainEvents)
             await _eventPublisher.PublishAsync(domainEvent, cancellationToken);
+
+        var created = await _saleRepository.CreateAsync(sale, cancellationToken);
         sale.ClearDomainEvents();
+
+        return _mapper.Map<SaleDto>(created);
     }
 }

@@ -1,5 +1,4 @@
 using Ambev.DeveloperEvaluation.Application.Sales.Common;
-using Ambev.DeveloperEvaluation.Domain.Entities;
 using Ambev.DeveloperEvaluation.Domain.Events;
 using Ambev.DeveloperEvaluation.Domain.Exceptions;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
@@ -36,16 +35,14 @@ public class CancelSaleItemHandler : IRequestHandler<CancelSaleItemCommand, Sale
 
         sale.CancelItem(command.ItemId);
 
-        await _saleRepository.UpdateAsync(sale, cancellationToken);
-        await PublishAndClearEventsAsync(sale, cancellationToken);
-
-        return _mapper.Map<SaleDto>(sale);
-    }
-
-    private async Task PublishAndClearEventsAsync(Sale sale, CancellationToken cancellationToken)
-    {
+        // Stage events before save so the outbox row commits atomically with
+        // the aggregate update.
         foreach (var domainEvent in sale.DomainEvents)
             await _eventPublisher.PublishAsync(domainEvent, cancellationToken);
+
+        await _saleRepository.UpdateAsync(sale, cancellationToken);
         sale.ClearDomainEvents();
+
+        return _mapper.Map<SaleDto>(sale);
     }
 }

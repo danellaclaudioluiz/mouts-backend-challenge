@@ -47,8 +47,13 @@ public class UpdateSaleHandler : IRequestHandler<UpdateSaleCommand, SaleDto>
         ApplyItemDiff(sale, command.Items);
         sale.MarkModified();
 
+        // Stage events before save so the outbox row commits atomically with
+        // the aggregate update.
+        foreach (var domainEvent in sale.DomainEvents)
+            await _eventPublisher.PublishAsync(domainEvent, cancellationToken);
+
         await _saleRepository.UpdateAsync(sale, cancellationToken);
-        await PublishAndClearEventsAsync(sale, cancellationToken);
+        sale.ClearDomainEvents();
 
         return _mapper.Map<SaleDto>(sale);
     }
@@ -92,10 +97,4 @@ public class UpdateSaleHandler : IRequestHandler<UpdateSaleCommand, SaleDto>
         }
     }
 
-    private async Task PublishAndClearEventsAsync(Sale sale, CancellationToken cancellationToken)
-    {
-        foreach (var domainEvent in sale.DomainEvents)
-            await _eventPublisher.PublishAsync(domainEvent, cancellationToken);
-        sale.ClearDomainEvents();
-    }
 }
