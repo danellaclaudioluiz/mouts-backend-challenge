@@ -44,6 +44,7 @@ public class SalesController : BaseController
     {
         var command = _mapper.Map<CreateSaleCommand>(request);
         var result = await _mediator.Send(command, cancellationToken);
+        Response.Headers.ETag = ETagFor(result.RowVersion);
 
         return CreatedAtAction(
             nameof(GetSale),
