@@ -40,11 +40,37 @@ public class SalesApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         await _postgres.StartAsync();
 
+        // Program.Main reads ConnectionStrings:DefaultConnection at builder
+        // construction time — BEFORE WebApplicationFactory's ConfigureWebHost
+        // callbacks fire and merge the InMemoryCollection below. Setting the
+        // env var here ensures the value is in the default configuration
+        // sources (env vars are auto-loaded by WebApplication.CreateBuilder)
+        // before the host is built on first Services access.
+        Environment.SetEnvironmentVariable(
+            "ConnectionStrings__DefaultConnection", _postgres.GetConnectionString());
+        Environment.SetEnvironmentVariable(
+            "Jwt__SecretKey", "integration-tests-jwt-secret-must-be-at-least-32-bytes-long");
+        // Bursty integration suites trip the default 100-rpm limit when they
+        // all share the loopback partition; bump it for the broad suite,
+        // overrideable by subclasses that exercise the limiter on purpose.
+        Environment.SetEnvironmentVariable("RateLimit__PermitLimit", "10000");
+        Environment.SetEnvironmentVariable("RateLimit__WindowSeconds", "60");
+        ConfigureExtraEnvironment();
+
         // Apply migrations against the freshly-started container before any
         // test runs.
         using var scope = Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<DefaultContext>();
         await context.Database.MigrateAsync();
+    }
+
+    /// <summary>
+    /// Hook for subclasses (e.g. <c>RateLimitedSalesApiFactory</c>) to
+    /// inject extra environment variables that must be in place before the
+    /// host is first built.
+    /// </summary>
+    protected virtual void ConfigureExtraEnvironment()
+    {
     }
 
     public new async Task DisposeAsync()
@@ -81,6 +107,9 @@ public class SalesApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
+                // Kept in addition to the env var set in InitializeAsync so
+                // anything that reads from IConfiguration AFTER builder.Build
+                // (services, controllers) sees the same value.
                 ["ConnectionStrings:DefaultConnection"] = _postgres.GetConnectionString(),
                 ["Jwt:SecretKey"] = "integration-tests-jwt-secret-must-be-at-least-32-bytes-long",
                 // Keep the rate limit out of the way of the broad integration

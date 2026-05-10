@@ -13,6 +13,15 @@ public class RateLimitedSalesApiFactory : SalesApiFactory
 {
     public const int PermitLimit = 5;
 
+    protected override void ConfigureExtraEnvironment()
+    {
+        // Override the relaxed limit set by the base factory. Env vars need
+        // to be in place BEFORE the host first builds, hence this hook
+        // instead of relying on the InMemoryCollection in ConfigureWebHost.
+        Environment.SetEnvironmentVariable("RateLimit__PermitLimit", PermitLimit.ToString());
+        Environment.SetEnvironmentVariable("RateLimit__WindowSeconds", "60");
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
