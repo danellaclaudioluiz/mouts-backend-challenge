@@ -17,7 +17,16 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.Username).IsRequired().HasMaxLength(50);
         builder.Property(u => u.Password).IsRequired().HasMaxLength(100);
         builder.Property(u => u.Email).IsRequired().HasMaxLength(100);
-        builder.Property(u => u.Phone).HasMaxLength(20);
+        // Phone is NOT NULL on the Users table from InitialMigrations; the
+        // mapping was missing IsRequired() so EF would happily try to insert
+        // NULL and let the DB reject it. Make the contract explicit.
+        builder.Property(u => u.Phone).IsRequired().HasMaxLength(20);
+
+        // Email is the login identifier; without a unique index Postgres has
+        // to seq-scan every authentication. Username is also a natural key
+        // and worth de-duplicating.
+        builder.HasIndex(u => u.Email).IsUnique();
+        builder.HasIndex(u => u.Username).IsUnique();
 
         builder.Property(u => u.Status)
             .HasConversion<string>()

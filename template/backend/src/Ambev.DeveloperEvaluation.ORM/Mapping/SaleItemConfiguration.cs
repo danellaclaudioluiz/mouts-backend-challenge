@@ -1,4 +1,5 @@
 using Ambev.DeveloperEvaluation.Domain.Entities;
+using Ambev.DeveloperEvaluation.Domain.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -8,13 +9,28 @@ public class SaleItemConfiguration : IEntityTypeConfiguration<SaleItem>
 {
     public void Configure(EntityTypeBuilder<SaleItem> builder)
     {
-        builder.ToTable("SaleItems");
+        builder.ToTable("SaleItems", t =>
+        {
+            // Defence-in-depth: the aggregate already enforces these but the
+            // database refuses bad data even if the app is bypassed (raw SQL,
+            // future services, accidental backfills).
+            t.HasCheckConstraint(
+                "CK_SaleItems_Quantity",
+                $"\"Quantity\" >= 1 AND \"Quantity\" <= {SaleItemDiscountPolicy.MaxQuantityPerProduct}");
+            t.HasCheckConstraint(
+                "CK_SaleItems_UnitPrice",
+                "\"UnitPrice\" > 0");
+            t.HasCheckConstraint(
+                "CK_SaleItems_Discount",
+                "\"Discount\" >= 0");
+            t.HasCheckConstraint(
+                "CK_SaleItems_TotalAmount",
+                "\"TotalAmount\" >= 0");
+        });
 
         builder.HasKey(i => i.Id);
 
         builder.Property(i => i.SaleId).IsRequired();
-        builder.HasIndex(i => new { i.SaleId, i.ProductId });
-
         builder.Property(i => i.ProductId).IsRequired();
         builder.Property(i => i.ProductName).IsRequired().HasMaxLength(200);
 
@@ -23,5 +39,15 @@ public class SaleItemConfiguration : IEntityTypeConfiguration<SaleItem>
         builder.Property(i => i.Discount).HasPrecision(18, 2);
         builder.Property(i => i.TotalAmount).HasPrecision(18, 2);
         builder.Property(i => i.IsCancelled).IsRequired();
+
+        // Unique partial index encoding the aggregate's invariant:
+        // each ProductId may appear at most once in a sale's non-cancelled
+        // items. Postgres enforces it even if a future caller bypasses the
+        // domain. Cancelled items are excluded from the constraint so
+        // re-adding the same product after a cancel is allowed.
+        builder.HasIndex(i => new { i.SaleId, i.ProductId })
+            .HasDatabaseName("UX_SaleItems_SaleId_ProductId_Active")
+            .IsUnique()
+            .HasFilter("\"IsCancelled\" = false");
     }
 }

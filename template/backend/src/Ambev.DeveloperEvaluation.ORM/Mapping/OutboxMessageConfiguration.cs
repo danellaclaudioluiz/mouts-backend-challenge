@@ -18,9 +18,12 @@ public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage
         builder.Property(m => m.Attempts).IsRequired();
         builder.Property(m => m.LastError).HasMaxLength(2000);
 
-        // Partial index over not-yet-processed rows ordered by time —
-        // the dispatcher's hot query.
-        builder.HasIndex(m => new { m.ProcessedAt, m.OccurredAt })
-            .HasDatabaseName("IX_OutboxMessages_Pending");
+        // Genuine partial index — only pending rows are indexed, so the
+        // dispatcher's 'WHERE ProcessedAt IS NULL ORDER BY OccurredAt' query
+        // walks a tiny tree that stays small even after months of dispatched
+        // (and yet-to-be-cleaned) rows pile up.
+        builder.HasIndex(m => m.OccurredAt)
+            .HasDatabaseName("IX_OutboxMessages_Pending")
+            .HasFilter("\"ProcessedAt\" IS NULL");
     }
 }
