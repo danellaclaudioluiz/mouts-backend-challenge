@@ -56,6 +56,13 @@ public class UserRepository : IUserRepository
             .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
     }
 
+    public Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken = default)
+    {
+        return _context.Users
+            .AsNoTracking()
+            .AnyAsync(u => u.Email == email, cancellationToken);
+    }
+
     /// <summary>
     /// Deletes a user from the database
     /// </summary>

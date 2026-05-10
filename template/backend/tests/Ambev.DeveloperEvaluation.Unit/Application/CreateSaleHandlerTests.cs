@@ -32,8 +32,8 @@ public class CreateSaleHandlerTests
     public async Task Handle_ValidCommand_PersistsAndPublishesEvent()
     {
         var command = CreateSaleHandlerTestData.GenerateValidCommand();
-        _saleRepository.GetBySaleNumberAsync(command.SaleNumber, Arg.Any<CancellationToken>())
-            .Returns((Sale?)null);
+        _saleRepository.SaleNumberExistsAsync(command.SaleNumber, Arg.Any<CancellationToken>())
+            .Returns(false);
 
         var result = await _handler.Handle(command, CancellationToken.None);
 
@@ -50,12 +50,8 @@ public class CreateSaleHandlerTests
     public async Task Handle_DuplicateSaleNumber_Throws()
     {
         var command = CreateSaleHandlerTestData.GenerateValidCommand();
-        var existingSale = Sale.Create(
-            command.SaleNumber, command.SaleDate,
-            Guid.NewGuid(), "x", Guid.NewGuid(), "y");
-
-        _saleRepository.GetBySaleNumberAsync(command.SaleNumber, Arg.Any<CancellationToken>())
-            .Returns(existingSale);
+        _saleRepository.SaleNumberExistsAsync(command.SaleNumber, Arg.Any<CancellationToken>())
+            .Returns(true);
 
         var act = () => _handler.Handle(command, CancellationToken.None);
 
@@ -72,8 +68,8 @@ public class CreateSaleHandlerTests
         // policy is the second line of defense — qty=21 must still throw.
         var command = CreateSaleHandlerTestData.GenerateValidCommand();
         command.Items[0].Quantity = 21;
-        _saleRepository.GetBySaleNumberAsync(command.SaleNumber, Arg.Any<CancellationToken>())
-            .Returns((Sale?)null);
+        _saleRepository.SaleNumberExistsAsync(command.SaleNumber, Arg.Any<CancellationToken>())
+            .Returns(false);
 
         var act = () => _handler.Handle(command, CancellationToken.None);
 
@@ -85,8 +81,8 @@ public class CreateSaleHandlerTests
     public async Task Handle_AfterSuccess_ClearsDomainEvents()
     {
         var command = CreateSaleHandlerTestData.GenerateValidCommand();
-        _saleRepository.GetBySaleNumberAsync(command.SaleNumber, Arg.Any<CancellationToken>())
-            .Returns((Sale?)null);
+        _saleRepository.SaleNumberExistsAsync(command.SaleNumber, Arg.Any<CancellationToken>())
+            .Returns(false);
 
         Sale? captured = null;
         await _saleRepository.CreateAsync(

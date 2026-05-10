@@ -37,8 +37,9 @@ public class CreateUserHandler : IRequestHandler<CreateUserCommand, CreateUserRe
     /// <returns>The created user details</returns>
     public async Task<CreateUserResult> Handle(CreateUserCommand command, CancellationToken cancellationToken)
     {
-        var existingUser = await _userRepository.GetByEmailAsync(command.Email, cancellationToken);
-        if (existingUser != null)
+        // Cheap pre-check; the unique index on Users.Email is the source of
+        // truth and a concurrent insert is mapped to 409 by the middleware.
+        if (await _userRepository.EmailExistsAsync(command.Email, cancellationToken))
             throw new ConflictException($"User with email {command.Email} already exists");
 
         var user = _mapper.Map<User>(command);

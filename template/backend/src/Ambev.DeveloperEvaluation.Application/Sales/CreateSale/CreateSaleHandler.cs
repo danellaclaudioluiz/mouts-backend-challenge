@@ -36,8 +36,11 @@ public class CreateSaleHandler : IRequestHandler<CreateSaleCommand, SaleDto>
     {
         SaleItemPayloadGuard.EnsureUniqueProductIds(command.Items);
 
-        var existing = await _saleRepository.GetBySaleNumberAsync(command.SaleNumber, cancellationToken);
-        if (existing is not null)
+        // Cheap pre-check (single AnyAsync, no rows materialised) for the
+        // common case. The unique index on SaleNumber is still the source of
+        // truth: a concurrent insert that slips past this check will fail at
+        // SaveChanges and be mapped to 409 by the WebApi middleware.
+        if (await _saleRepository.SaleNumberExistsAsync(command.SaleNumber, cancellationToken))
             throw new ConflictException(
                 $"A sale with number '{command.SaleNumber}' already exists.");
 

@@ -16,6 +16,14 @@ public interface ISaleRepository
     /// <summary>Loads a sale with its items, or null if not found.</summary>
     Task<Sale?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns true when a sale with the supplied business number already
+    /// exists. Used as a fast-path pre-check before insert; the unique index
+    /// on SaleNumber is still the source of truth and a concurrent insert is
+    /// translated to 409 by the WebApi exception middleware.
+    /// </summary>
+    Task<bool> SaleNumberExistsAsync(string saleNumber, CancellationToken cancellationToken = default);
+
     /// <summary>Loads a sale by its business sale number, or null if not found.</summary>
     Task<Sale?> GetBySaleNumberAsync(string saleNumber, CancellationToken cancellationToken = default);
 

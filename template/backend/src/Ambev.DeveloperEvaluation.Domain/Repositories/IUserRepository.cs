@@ -32,6 +32,13 @@ public interface IUserRepository
     Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns true when a user with the supplied email already exists.
+    /// Cheaper than <see cref="GetByEmailAsync"/> when the caller only needs
+    /// the boolean (e.g. duplicate-check on Create).
+    /// </summary>
+    Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes a user from the repository
     /// </summary>
     /// <param name="id">The unique identifier of the user to delete</param>

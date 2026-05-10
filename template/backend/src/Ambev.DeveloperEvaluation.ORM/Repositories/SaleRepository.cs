@@ -41,6 +41,13 @@ public class SaleRepository : ISaleRepository
             .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
     }
 
+    public Task<bool> SaleNumberExistsAsync(string saleNumber, CancellationToken cancellationToken = default)
+    {
+        return _context.Sales
+            .AsNoTracking()
+            .AnyAsync(s => s.SaleNumber == saleNumber, cancellationToken);
+    }
+
     public Task<Sale?> GetBySaleNumberAsync(string saleNumber, CancellationToken cancellationToken = default)
     {
         return _context.Sales
