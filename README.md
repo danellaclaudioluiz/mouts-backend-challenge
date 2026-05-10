@@ -80,36 +80,47 @@ See [Project Structure](/.doc/project-structure.md)
 
 ## Sales API
 
-The Sales feature is the implementation of the use case described above. It is
-a complete CRUD with discount business rules, soft-cancel semantics and a
-domain-event publisher. All endpoints are public (no `[Authorize]`).
+The Sales feature is the implementation of the use case described above —
+a complete CRUD with quantity-tier discount rules, soft-cancel semantics,
+and a transactional outbox dispatching domain events. All endpoints are
+public (no `[Authorize]`).
 
 ### Endpoints
 
 | Verb | Route | Description |
 |---|---|---|
-| `POST` | `/api/sales` | Create a sale (header + items) |
-| `GET` | `/api/sales/{id}` | Get a sale by id |
-| `GET` | `/api/sales` | List sales (paginated, filtered, ordered) |
-| `PUT` | `/api/sales/{id}` | Full-replace update (header + items, `SaleNumber` is immutable) |
-| `DELETE` | `/api/sales/{id}` | Hard-delete a sale and its items |
-| `PATCH` | `/api/sales/{id}/cancel` | Soft-cancel a sale (idempotent) |
-| `PATCH` | `/api/sales/{id}/items/{itemId}/cancel` | Cancel a single line and recalculate the total |
+| `POST` | `/api/sales` | Create a sale (header + items). Honours `Idempotency-Key`. |
+| `GET` | `/api/sales/{id}` | Get a sale by id (full body with items). |
+| `GET` | `/api/sales` | List sales (paginated, filtered, ordered) — header-only summaries. |
+| `PUT` | `/api/sales/{id}` | Diff-based update: existing items keep their id when only quantity/price changes. |
+| `DELETE` | `/api/sales/{id}` | Hard-delete a sale and its items (cascade). |
+| `PATCH` | `/api/sales/{id}/cancel` | Soft-cancel a sale (idempotent). |
+| `PATCH` | `/api/sales/{id}/items/{itemId}/cancel` | Cancel a single line and recalculate the total. |
 
 The list endpoint follows the conventions in
 [`/.doc/general-api.md`](.doc/general-api.md): `_page`, `_size`, `_order`,
-plus `_minDate`/`_maxDate`, `customerId`, `branchId`, `isCancelled`,
+plus `_minDate` / `_maxDate`, `customerId`, `branchId`, `isCancelled`,
 `saleNumber` (substring with `*`).
 
-Validation errors return HTTP 400, missing resources return 404, business-rule
-violations (`DomainException`) return 400 under `errors[].error = "DomainRule"`,
-and conflicts (e.g. duplicate `SaleNumber`) return 409.
+### Error contract
+
+Errors come back as RFC 7807 `application/problem+json` payloads:
+
+| Exception | HTTP | Title |
+|---|---|---|
+| `ValidationException` (FluentValidation) | 400 | Validation failed |
+| `DomainException` | 400 | Domain rule violated |
+| `ResourceNotFoundException` | 404 | Resource not found |
+| `ConflictException` / unique-violation / `DbUpdateConcurrencyException` | 409 | Conflict / Concurrent modification |
+| `UnauthorizedAccessException` | 401 | Unauthorized |
+| Any other | 500 | Internal server error (logged with full stack via Serilog) |
 
 ### Discount rules
 
-Quantity-based, applied per product across non-cancelled lines. Adding the
-same product twice in one sale merges into a single line so the cap can't
-be bypassed by splitting orders.
+Per product, across non-cancelled lines. Adding the same product twice
+with **different unit price or product name** is rejected — caller must
+consolidate before sending. Same product with the same price merges
+quantity so the 20-cap can't be bypassed by splitting lines.
 
 | Quantity (per product) | Discount |
 |---|---|
@@ -118,21 +129,36 @@ be bypassed by splitting orders.
 | 10–20 | 20% |
 | above 20 | not allowed (HTTP 400) |
 
-### Domain events
+### Domain events & outbox
 
-The aggregate raises four events that are dispatched after persistence by
-`LoggingDomainEventPublisher` (logged as structured Serilog entries — no real
-broker required for the challenge):
+Each Sales handler stages events into an `OutboxMessages` table inside the
+same transaction that persists the aggregate, and a hosted background
+service (`OutboxDispatcherService`) polls the table every 5 seconds and
+emits each pending message via the application log — so events survive a
+crash between SaveChanges and publish. To replace the logger with a real
+broker, swap the body of `OutboxDispatcherService.DispatchPendingAsync`.
+
+Four event types raised:
 
 - `SaleCreatedEvent` — on POST
 - `SaleModifiedEvent` — on PUT
 - `SaleCancelledEvent` — on PATCH `/cancel`
 - `ItemCancelledEvent` — on PATCH `/items/{itemId}/cancel`
 
-### Running locally
+### Concurrency, idempotency, observability
 
-The connection string in `appsettings.Development.json` matches the Postgres
-service in `docker-compose.yml` out of the box.
+- **Optimistic concurrency** on `Sale` via Postgres `xmin` (zero schema
+  cost). Concurrent PUTs on the same sale produce 409.
+- **`Idempotency-Key`** header on POST `/api/sales` replays the cached
+  response for the same key/path for 24 hours. Backed by `IMemoryCache`
+  for now — swap for Redis (already in `docker-compose.yml`) for
+  multi-instance deployments.
+- **Health probes**: `/health/live` (process), `/health/ready` (Postgres
+  via `AddDbContextCheck`), `/health` (everything).
+- **Structured logging** via Serilog (configurable per environment).
+  Outbox dispatch and exception middleware emit structured logs.
+
+### Running locally
 
 ```bash
 cd template/backend
@@ -151,6 +177,29 @@ dotnet run --project src/Ambev.DeveloperEvaluation.WebApi
 
 Swagger UI: `https://localhost:8081/swagger`.
 
+#### Configuration
+
+The default `appsettings.json` ships with **empty** `ConnectionStrings:DefaultConnection`
+and `Jwt:SecretKey` — the app fails fast on startup if either is missing.
+For local development, `appsettings.Development.json` already contains a
+working Postgres connection string and a clearly-marked dev-only JWT key.
+
+For production, set both via environment variables:
+
+```bash
+ConnectionStrings__DefaultConnection="Host=...;Port=5432;..."
+Jwt__SecretKey="<at least 32 bytes>"
+```
+
+Or, for local development without committing secrets:
+
+```bash
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "..." \
+  --project src/Ambev.DeveloperEvaluation.WebApi
+dotnet user-secrets set "Jwt:SecretKey" "..." \
+  --project src/Ambev.DeveloperEvaluation.WebApi
+```
+
 ### Running the tests
 
 ```bash
@@ -158,6 +207,25 @@ cd template/backend
 dotnet test
 ```
 
-The unit suite covers the discount policy tiers, the `Sale` aggregate
-invariants (per-product cap, idempotent cancel, item recalculation) and the
-main handlers (`CreateSale`, `CancelSale`, `CancelSaleItem`).
+- **Unit tests** (`tests/Ambev.DeveloperEvaluation.Unit`): >100 tests
+  covering the discount policy, the `Sale` aggregate invariants, the
+  `CreateSaleValidator`, and every Sales handler (Create / Get / List /
+  Update / Delete / Cancel / CancelSaleItem). No external dependencies.
+
+- **Integration tests** (`tests/Ambev.DeveloperEvaluation.Integration`):
+  end-to-end via `WebApplicationFactory` against a real Postgres running
+  in a [Testcontainers](https://dotnet.testcontainers.org/) container.
+  **Requires a working Docker daemon.** Boots once per fixture; tests
+  share the container.
+
+### Coverage report
+
+```bash
+cd template/backend
+./coverage-report.sh   # or coverage-report.bat on Windows
+open TestResults/CoverageReport/index.html
+```
+
+Uses [Coverlet](https://github.com/coverlet-coverage/coverlet) +
+[ReportGenerator](https://reportgenerator.io/), both installed by the
+script if missing.
