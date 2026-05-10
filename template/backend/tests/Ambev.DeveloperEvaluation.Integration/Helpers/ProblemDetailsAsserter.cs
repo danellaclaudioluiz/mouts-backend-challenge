@@ -18,7 +18,8 @@ public static class ProblemDetailsAsserter
     public static async Task<JsonElement> AssertProblemAsync(
         HttpResponseMessage response,
         HttpStatusCode expected,
-        string? expectedTitleContains = null)
+        string? expectedTitleContains = null,
+        bool requireDetail = true)
     {
         response.StatusCode.Should().Be(expected,
             "the response body was: " + await response.Content.ReadAsStringAsync());
@@ -41,6 +42,19 @@ public static class ProblemDetailsAsserter
         doc.TryGetProperty("instance", out var instance).Should().BeTrue(
             "the instance is the request path — needed to correlate logs to user-visible errors");
         instance.GetString().Should().NotBeNullOrWhiteSpace();
+
+        // RFC 7807 marks 'detail' as OPTIONAL, but our middleware emits one
+        // on every error path so the client (and the SRE reading the
+        // problem doc in logs) sees something more specific than the title.
+        // The default [ApiController] ValidationProblemDetails on model
+        // binding does not set detail — opt out via requireDetail=false
+        // when checking that specific shape.
+        if (requireDetail)
+        {
+            doc.TryGetProperty("detail", out var detail).Should().BeTrue(
+                "'detail' should always be present so callers get an actionable message — pass requireDetail=false only for the [ApiController] default validation shape");
+            detail.GetString().Should().NotBeNullOrWhiteSpace();
+        }
 
         if (expectedTitleContains is not null)
             title.GetString().Should().Contain(expectedTitleContains);
