@@ -27,20 +27,23 @@ public static class LoggingExtension
         .WithDestructurers([new DbUpdateExceptionDestructurer()]);
 
     /// <summary>
-    /// A filter predicate to exclude log events with specific criteria.
+    /// Returns <c>true</c> when the event should be DROPPED. The intent is to
+    /// silence the noisy 200-OK pings on /health while keeping every Warning,
+    /// Error, Critical and Fatal event. The non-Information short-circuit
+    /// MUST return <c>false</c> (= keep) — returning <c>true</c> here drops
+    /// every error log in the application.
     /// </summary>
-    static readonly Func<LogEvent, bool> _filterPredicate = exclusionPredicate =>
+    static readonly Func<LogEvent, bool> _filterPredicate = logEvent =>
     {
+        if (logEvent.Level != LogEventLevel.Information) return false;
 
-        if (exclusionPredicate.Level != LogEventLevel.Information) return true;
+        logEvent.Properties.TryGetValue("StatusCode", out var statusCode);
+        logEvent.Properties.TryGetValue("Path", out var path);
 
-        exclusionPredicate.Properties.TryGetValue("StatusCode", out var statusCode);
-        exclusionPredicate.Properties.TryGetValue("Path", out var path);
+        var isOk = statusCode == null || statusCode.ToString().Equals("200");
+        var isHealthProbe = path?.ToString().Contains("/health") ?? false;
 
-        var excludeByStatusCode = statusCode == null || statusCode.ToString().Equals("200");
-        var excludeByPath = path?.ToString().Contains("/health") ?? false;
-
-        return excludeByStatusCode && excludeByPath;
+        return isOk && isHealthProbe;
     };
 
     /// <summary>
