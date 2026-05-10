@@ -1,25 +1,40 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
-using System.Text;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace Ambev.DeveloperEvaluation.WebApi.Middleware;
 
 /// <summary>
-/// Honours the <c>Idempotency-Key</c> request header on POST endpoints. The
-/// first request with a given key runs normally and the response (status +
-/// body + content type) is cached; later requests with the same key return
-/// the cached response without invoking the pipeline again.
+/// Honours the <c>Idempotency-Key</c> request header on POST endpoints.
 /// </summary>
 /// <remarks>
-/// Backed by IMemoryCache for the challenge — fine for a single instance.
-/// In production, swap for a distributed cache (Redis) so the key still
-/// works after a restart or behind a load balancer. Idempotency-Key is
-/// only honoured on POST; PUT/DELETE/PATCH are already idempotent at the
-/// HTTP semantics level.
+/// Behavior matches Stripe's well-known semantics:
+/// <list type="bullet">
+///   <item>Only successful responses (2xx) are cached. 4xx and 5xx remain
+///         retryable with the same key — the next attempt re-runs the
+///         pipeline and may produce a different status.</item>
+///   <item>The cache entry is keyed by path + header value AND fingerprinted
+///         with a SHA-256 hash of the request body. Using the same
+///         Idempotency-Key with a different payload returns 422
+///         Unprocessable Entity, so a buggy or malicious caller cannot
+///         accidentally read the response from someone else's request.</item>
+/// </list>
+/// Backed by IMemoryCache with a 24-hour TTL — fine for a single instance.
+/// In production, swap for IDistributedCache (Redis already in
+/// docker-compose) so the key still works after a restart or behind a load
+/// balancer.
 /// </remarks>
 public class IdempotencyMiddleware
 {
     private const string HeaderName = "Idempotency-Key";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromHours(24);
+
+    private static readonly JsonSerializerOptions ProblemJson = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    };
 
     private readonly RequestDelegate _next;
     private readonly IMemoryCache _cache;
@@ -45,11 +60,18 @@ public class IdempotencyMiddleware
             return;
         }
 
-        var key = $"idem:{context.Request.Path}:{keys}";
+        var bodyHash = await HashRequestBodyAsync(context.Request);
+        var cacheKey = $"idem:{context.Request.Path}:{keys}";
 
-        if (_cache.TryGetValue<CachedResponse>(key, out var cached) && cached is not null)
+        if (_cache.TryGetValue<CachedResponse>(cacheKey, out var cached) && cached is not null)
         {
-            _logger.LogInformation("Replaying cached response for Idempotency-Key {Key}", key);
+            if (cached.RequestHash != bodyHash)
+            {
+                await WriteIdempotencyMismatchAsync(context, keys.ToString());
+                return;
+            }
+
+            _logger.LogInformation("Replaying cached response for Idempotency-Key {Key}", cacheKey);
             context.Response.StatusCode = cached.StatusCode;
             context.Response.ContentType = cached.ContentType;
             await context.Response.Body.WriteAsync(cached.Body);
@@ -66,14 +88,15 @@ public class IdempotencyMiddleware
             buffer.Position = 0;
             var body = buffer.ToArray();
 
-            // Only cache successful or client-error responses; transient
-            // 5xx errors should be retryable, not stuck behind a cache.
-            if (context.Response.StatusCode is >= 200 and < 500)
+            // Cache only 2xx — clients should be able to retry the same
+            // Idempotency-Key after fixing a 4xx and get a fresh attempt.
+            if (context.Response.StatusCode is >= 200 and < 300)
             {
-                _cache.Set(key, new CachedResponse(
+                _cache.Set(cacheKey, new CachedResponse(
                     context.Response.StatusCode,
                     context.Response.ContentType ?? "application/json",
-                    body), CacheTtl);
+                    body,
+                    bodyHash), CacheTtl);
             }
 
             await originalBody.WriteAsync(body);
@@ -84,5 +107,34 @@ public class IdempotencyMiddleware
         }
     }
 
-    private sealed record CachedResponse(int StatusCode, string ContentType, byte[] Body);
+    private static async Task<string> HashRequestBodyAsync(HttpRequest request)
+    {
+        request.EnableBuffering();
+        request.Body.Position = 0;
+
+        using var sha = SHA256.Create();
+        var hash = await sha.ComputeHashAsync(request.Body);
+
+        request.Body.Position = 0;
+        return Convert.ToHexString(hash);
+    }
+
+    private static Task WriteIdempotencyMismatchAsync(HttpContext context, string key)
+    {
+        var problem = new ProblemDetails
+        {
+            Status = StatusCodes.Status422UnprocessableEntity,
+            Title = "Idempotency-Key reuse with different payload",
+            Type = "https://httpstatuses.io/422",
+            Detail = $"Idempotency-Key '{key}' was first used with a different request body. " +
+                     "Use a new key for a different request.",
+            Instance = context.Request.Path
+        };
+
+        context.Response.ContentType = "application/problem+json";
+        context.Response.StatusCode = problem.Status.Value;
+        return context.Response.WriteAsync(JsonSerializer.Serialize(problem, ProblemJson));
+    }
+
+    private sealed record CachedResponse(int StatusCode, string ContentType, byte[] Body, string RequestHash);
 }

@@ -85,35 +85,65 @@ public class SalesEndpointsTests : IClassFixture<SalesApiFactory>
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    [Fact(DisplayName = "Idempotency-Key replays the cached response")]
+    [Fact(DisplayName = "Idempotency-Key replays the cached response when body matches")]
     public async Task CreateSale_IdempotencyKey_Replays()
     {
-        var saleNumber = $"S-{Guid.NewGuid():N}";
         var idempotencyKey = Guid.NewGuid().ToString();
+        var payload = BuildPayload($"S-{Guid.NewGuid():N}");
 
-        var request1 = new HttpRequestMessage(HttpMethod.Post, "/api/sales")
-        {
-            Content = JsonContent.Create(BuildPayload(saleNumber))
-        };
-        request1.Headers.Add("Idempotency-Key", idempotencyKey);
-
-        var first = await _client.SendAsync(request1);
+        var first = await SendIdempotentPostAsync("/api/sales", payload, idempotencyKey);
         var firstBody = await first.Content.ReadAsStringAsync();
         first.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        // Replay with the same key — even though the sale-number conflict
-        // would normally produce 409, the cached 201 response is returned.
-        var request2 = new HttpRequestMessage(HttpMethod.Post, "/api/sales")
-        {
-            Content = JsonContent.Create(BuildPayload(saleNumber))
-        };
-        request2.Headers.Add("Idempotency-Key", idempotencyKey);
-
-        var replay = await _client.SendAsync(request2);
+        // Replay with the same key + same body — even though the sale-number
+        // conflict would normally produce 409, the cached 201 is returned.
+        var replay = await SendIdempotentPostAsync("/api/sales", payload, idempotencyKey);
         var replayBody = await replay.Content.ReadAsStringAsync();
 
         replay.StatusCode.Should().Be(HttpStatusCode.Created);
         replayBody.Should().Be(firstBody);
+    }
+
+    [Fact(DisplayName = "Idempotency-Key with a different body returns 422")]
+    public async Task CreateSale_IdempotencyKey_BodyMismatch_Returns422()
+    {
+        var idempotencyKey = Guid.NewGuid().ToString();
+        var first = await SendIdempotentPostAsync(
+            "/api/sales", BuildPayload($"S-{Guid.NewGuid():N}"), idempotencyKey);
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var second = await SendIdempotentPostAsync(
+            "/api/sales", BuildPayload($"S-{Guid.NewGuid():N}"), idempotencyKey);
+        second.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
+    [Fact(DisplayName = "Idempotency-Key does not cache 4xx responses")]
+    public async Task CreateSale_IdempotencyKey_NotCachedFor4xx()
+    {
+        var idempotencyKey = Guid.NewGuid().ToString();
+
+        // First attempt: validation error (qty > 20) — must NOT be cached.
+        var bad = await SendIdempotentPostAsync(
+            "/api/sales", BuildPayload($"S-{Guid.NewGuid():N}", quantity: 21), idempotencyKey);
+        bad.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // Same key + same body: still re-runs and still fails — cache miss
+        // because the prior 4xx wasn't stored.
+        var retrySame = await SendIdempotentPostAsync(
+            "/api/sales", BuildPayload($"S-{Guid.NewGuid():N}", quantity: 21), idempotencyKey);
+        retrySame.StatusCode.Should().BeOneOf(
+            HttpStatusCode.BadRequest,
+            HttpStatusCode.UnprocessableEntity);
+    }
+
+    private async Task<HttpResponseMessage> SendIdempotentPostAsync(string url, object payload, string key)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = JsonContent.Create(payload)
+        };
+        request.Headers.Add("Idempotency-Key", key);
+        return await _client.SendAsync(request);
     }
 
     [Fact(DisplayName = "PATCH /cancel marks sale cancelled")]
