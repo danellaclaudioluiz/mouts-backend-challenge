@@ -5,13 +5,19 @@ namespace Ambev.DeveloperEvaluation.Application.Sales.UpdateSale;
 
 public class UpdateSaleValidator : AbstractValidator<UpdateSaleCommand>
 {
-    public UpdateSaleValidator()
+    public UpdateSaleValidator() : this(TimeProvider.System)
     {
+    }
+
+    public UpdateSaleValidator(TimeProvider timeProvider)
+    {
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
         RuleFor(c => c.Id).NotEmpty();
         RuleFor(c => c.SaleDate)
             .GreaterThan(new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc))
             .WithMessage("Sale date must be a real date (after 2000-01-01).")
-            .LessThanOrEqualTo(_ => DateTime.UtcNow.AddDays(1))
+            .LessThanOrEqualTo(_ => now.AddDays(1))
             .WithMessage("Sale date cannot be in the future.");
         RuleFor(c => c.CustomerId).NotEmpty();
         RuleFor(c => c.CustomerName).NotEmpty().MaximumLength(200);
