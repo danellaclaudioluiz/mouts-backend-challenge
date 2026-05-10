@@ -102,6 +102,12 @@ The list endpoint follows the conventions in
 plus `_minDate` / `_maxDate`, `customerId`, `branchId`, `isCancelled`,
 `saleNumber` (substring with `*`).
 
+It also supports **keyset (cursor) pagination** for high-scale clients via
+the `_cursor` query parameter. The response carries `nextCursor` when more
+pages exist; pass it back as `_cursor=...` on the next request and the
+query runs in O(log n) per page with no COUNT(\*) round-trip. `_cursor`
+and `_page` are mutually exclusive — pick one mode per call.
+
 ### Error contract
 
 Errors come back as RFC 7807 `application/problem+json` payloads:
@@ -168,6 +174,11 @@ rows or downstream consumers:
   the same key with a different body returns 422. Backed by
   `IDistributedCache`: Redis when `ConnectionStrings:Redis` is set
   (multi-pod safe), in-memory fallback otherwise.
+- **2nd-level read cache** (`ISaleReadCache`) in front of
+  `GET /api/v1/sales/{id}` — same `IDistributedCache` (Redis if
+  configured), 60-second TTL safety net, evicted explicitly on every
+  write (Update / Cancel / CancelItem / Delete) so the next read sees
+  the new state immediately.
 - **Health probes**: `/health/live` (process), `/health/ready` (Postgres
   via `AddDbContextCheck`), `/health` (full report).
 - **CORS** with restrictive default; configure allowed origins via
@@ -213,15 +224,34 @@ The schema and connection setup are tuned for production-style load:
   transaction, so autovacuum keeps up and WAL doesn't spike. The
   dispatcher dead-letters messages after 10 failed attempts (the row
   stays in the table with `LastError` populated for inspection).
+- **Outbox dispatch is two-phase** (claim with `LockedUntil`, publish
+  outside any transaction, mark in a short second transaction) so a slow
+  broker round-trip never holds row locks. It also keeps a dedicated
+  LISTEN connection on the `outbox_pending` channel — a trigger fires
+  `NOTIFY` on every outbox insert, so end-to-end publish latency drops
+  from "up to 5 s" (poll interval) to sub-second under load.
+- **Compiled queries** (`EF.CompileAsyncQuery`) for the two hottest
+  reads: `Sale.GetByIdAsync` (every write path hits it) and
+  `User.GetByEmailAsync` (every authn request).
+- **Cheap pre-checks**: `SaleNumberExistsAsync` and `EmailExistsAsync`
+  use `AsNoTracking() + AnyAsync()` for duplicate-check on Create. The
+  unique index is still the source of truth — a concurrent insert that
+  slips past returns 409 from the middleware.
 
 ### Known future work (not in scope for the challenge)
 
-- **LISTEN/NOTIFY** in the outbox dispatcher to wake up immediately on
-  publish instead of polling every 5s.
-- **Compiled queries** (`EF.CompileAsyncQuery`) for the hot
-  `GetByIdAsync` path.
-- **Keyset pagination** (cursor) on `ListSales` to replace the
-  `LongCount` round-trip on multi-million-row tables.
+- **`pg_trgm` GIN index on `OutboxMessages.Payload`** — only worth
+  adding the day someone needs to query messages by JSON content (e.g.
+  "all events for customerId X"). Today the table is append-and-read-by-id
+  for the dispatcher; a `USING gin (Payload jsonb_path_ops)` plus a
+  query rewrite covers that future need with a small storage cost.
+- **Partition `OutboxMessages` by month** (declarative range partitions
+  on `OccurredAt`) so the cleanup job becomes `DROP PARTITION` instead
+  of a chunked DELETE — instantaneous, no autovacuum churn.
+- **Compiled bulk-update plans for the dispatcher** (skip the per-row
+  failure UPDATE in favour of a CTE-based batched UPDATE).
+- **2nd-level cache for `ListSales`** with cache-aside invalidation on
+  any sale write (today only the by-id read is cached).
 
 ### Running locally
 
