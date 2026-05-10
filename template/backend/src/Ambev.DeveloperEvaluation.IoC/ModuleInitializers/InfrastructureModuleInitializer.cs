@@ -16,6 +16,6 @@ public class InfrastructureModuleInitializer : IModuleInitializer
         builder.Services.AddScoped<DbContext>(provider => provider.GetRequiredService<DefaultContext>());
         builder.Services.AddScoped<IUserRepository, UserRepository>();
         builder.Services.AddScoped<ISaleRepository, SaleRepository>();
-        builder.Services.AddSingleton<IDomainEventPublisher, LoggingDomainEventPublisher>();
+        builder.Services.AddScoped<IDomainEventPublisher, LoggingDomainEventPublisher>();
     }
 }
