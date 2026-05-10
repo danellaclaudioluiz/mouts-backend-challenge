@@ -17,5 +17,11 @@ public class SaleDto
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public long RowVersion { get; set; }
+    /// <summary>
+    /// Count of non-cancelled line items, denormalised from the aggregate
+    /// (matches Sale.ActiveItemsCount). Lets clients render the headline
+    /// "X items active" count without re-walking the items array.
+    /// </summary>
+    public int ActiveItemsCount { get; set; }
     public List<SaleItemDto> Items { get; set; } = new();
 }
