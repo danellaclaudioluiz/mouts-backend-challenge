@@ -28,6 +28,16 @@ public class Program
             builder.Services.AddEndpointsApiExplorer();
 
             builder.AddBasicHealthChecks();
+
+            // Probe Postgres on /health/ready so kubernetes-style readiness
+            // checks fail when the DB is unreachable instead of letting traffic
+            // hit a doomed instance.
+            builder.Services.AddHealthChecks()
+                .AddDbContextCheck<DefaultContext>(
+                    name: "Postgres",
+                    failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
+                    tags: new[] { "readiness" });
+
             builder.Services.AddSwaggerGen();
 
             var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
