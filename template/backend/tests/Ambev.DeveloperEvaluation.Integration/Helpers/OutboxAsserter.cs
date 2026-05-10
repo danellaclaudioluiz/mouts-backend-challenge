@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Ambev.DeveloperEvaluation.ORM;
 using Ambev.DeveloperEvaluation.ORM.Outbox;
 using FluentAssertions;
@@ -14,6 +15,8 @@ namespace Ambev.DeveloperEvaluation.Integration.Helpers;
 public sealed class OutboxAsserter
 {
     private readonly SalesApiFactory _factory;
+
+    private static readonly JsonSerializerOptions PayloadJsonOptions = new(JsonSerializerDefaults.Web);
 
     public OutboxAsserter(SalesApiFactory factory)
     {
@@ -52,5 +55,20 @@ public sealed class OutboxAsserter
         using var scope = _factory.Services.CreateScope();
         var ctx = scope.ServiceProvider.GetRequiredService<DefaultContext>();
         return await ctx.OutboxMessages.CountAsync();
+    }
+
+    /// <summary>
+    /// Asserts that exactly one outbox row matches <paramref name="eventTypeAlias"/>
+    /// and deserialises its Payload into <typeparamref name="T"/>. Lets a test
+    /// move past "the alias is there" and actually check that the SaleId,
+    /// TotalAmount, etc. on the wire match what the aggregate produced.
+    /// </summary>
+    public async Task<T> AssertSinglePayloadAsync<T>(string eventTypeAlias) where T : class
+    {
+        var row = await AssertSingleAsync(eventTypeAlias);
+        var payload = JsonSerializer.Deserialize<T>(row.Payload, PayloadJsonOptions);
+        payload.Should().NotBeNull(
+            $"the outbox row for '{eventTypeAlias}' must hold a deserialisable {typeof(T).Name} payload (raw: {row.Payload})");
+        return payload!;
     }
 }

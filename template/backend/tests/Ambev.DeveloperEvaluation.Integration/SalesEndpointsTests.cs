@@ -43,6 +43,19 @@ public class SalesEndpointsTests : IAsyncLifetime
 
         var outboxRow = await _outbox.AssertSingleAsync("sale.created.v1");
         outboxRow.ProcessedAt.Should().BeNull("the dispatcher hasn't run yet — the row should be pending");
+
+        // The string-match above only proves the alias landed. Round-trip
+        // the payload too so a bug that emits a default-valued SaleId,
+        // wrong SaleNumber, or negative TotalAmount fails here instead of
+        // leaking downstream.
+        var payload = await _outbox.AssertSinglePayloadAsync<SaleCreatedEventPayload>("sale.created.v1");
+        payload.SaleNumber.Should().Be(saleNumber);
+        payload.SaleId.Should().NotBeEmpty();
+        payload.CustomerId.Should().NotBeEmpty();
+        payload.BranchId.Should().NotBeEmpty();
+        payload.ItemCount.Should().Be(1);
+        payload.TotalAmount.Should().BeGreaterThan(0m,
+            "the create payload aggregates non-cancelled item totals — must reflect the discount-adjusted total");
     }
 
     [Fact(DisplayName = "POST /api/v1/sales rejects duplicate SaleNumber with 409")]
@@ -212,6 +225,10 @@ public class SalesEndpointsTests : IAsyncLifetime
         get!.Data.IsCancelled.Should().BeTrue();
 
         await _outbox.AssertContainsAsync("sale.created.v1", "sale.cancelled.v1");
+
+        var cancelledPayload = await _outbox.AssertSinglePayloadAsync<SaleCancelledEventPayload>("sale.cancelled.v1");
+        cancelledPayload.SaleId.Should().Be(created.Data.Id);
+        cancelledPayload.SaleNumber.Should().Be(saleNumber);
     }
 
     [Fact(DisplayName = "GET returns ETag and PUT with stale If-Match returns 412")]

@@ -106,3 +106,34 @@ public sealed record EnvelopedList(
     long? TotalPages,
     long? TotalCount,
     string? NextCursor);
+
+// Wire shapes of the domain events serialised into OutboxMessage.Payload.
+// Mirrors Ambev.DeveloperEvaluation.Domain.Events.* — kept here so the
+// integration tests don't take a Domain reference just for record DTOs.
+public sealed record SaleCreatedEventPayload(
+    Guid SaleId,
+    string SaleNumber,
+    Guid CustomerId,
+    Guid BranchId,
+    decimal TotalAmount,
+    int ItemCount,
+    DateTime OccurredAt);
+
+public sealed record SaleModifiedEventPayload(
+    Guid SaleId,
+    string SaleNumber,
+    decimal TotalAmount,
+    int ItemCount,
+    DateTime OccurredAt);
+
+public sealed record SaleCancelledEventPayload(
+    Guid SaleId,
+    string SaleNumber,
+    DateTime OccurredAt);
+
+public sealed record ItemCancelledEventPayload(
+    Guid SaleId,
+    Guid ItemId,
+    Guid ProductId,
+    int Quantity,
+    DateTime OccurredAt);

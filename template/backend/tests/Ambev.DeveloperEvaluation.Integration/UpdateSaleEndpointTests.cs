@@ -47,6 +47,12 @@ public class UpdateSaleEndpointTests : IAsyncLifetime
             .Which.Quantity.Should().Be(7);
 
         await _outbox.AssertContainsAsync("sale.created.v1", "sale.modified.v1");
+
+        var modifiedPayload = await _outbox.AssertSinglePayloadAsync<SaleModifiedEventPayload>("sale.modified.v1");
+        modifiedPayload.SaleId.Should().Be(created.Id);
+        modifiedPayload.ItemCount.Should().Be(1);
+        // 7 × 20 = 140, 10% tier discount = 14 → total 126
+        modifiedPayload.TotalAmount.Should().Be(126m);
     }
 
     [Fact(DisplayName = "PUT /api/v1/sales/{id} preserves item id when only qty changes (diff path)")]

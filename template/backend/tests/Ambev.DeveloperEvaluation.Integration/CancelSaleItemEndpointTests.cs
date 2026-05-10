@@ -55,6 +55,12 @@ public class CancelSaleItemEndpointTests : IAsyncLifetime
             "Sale.ActiveItemsCount is denormalised on the aggregate; after one cancel it drops by one");
 
         await _outbox.AssertContainsAsync("sale.created.v1", "sale.item_cancelled.v1");
+
+        var eventPayload = await _outbox.AssertSinglePayloadAsync<ItemCancelledEventPayload>("sale.item_cancelled.v1");
+        eventPayload.SaleId.Should().Be(created.Id);
+        eventPayload.ItemId.Should().Be(itemToCancel.Id);
+        eventPayload.ProductId.Should().Be(extraProductId);
+        eventPayload.Quantity.Should().Be(4, "the cancelled item carried qty=4 — the payload must reflect that");
     }
 
     [Fact(DisplayName = "PATCH /items/{itemId}/cancel is idempotent — second call does not emit another event")]
