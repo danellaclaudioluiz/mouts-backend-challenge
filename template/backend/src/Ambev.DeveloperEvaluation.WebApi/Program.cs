@@ -35,7 +35,17 @@ public class Program
             WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
             builder.AddDefaultLogging();
 
-            builder.Services.AddControllers();
+            // Default MVC JSON encoder is permissive: a stored
+            // CustomerName like "<script>" round-trips on the wire as raw
+            // <script>. JSON-only consumers can render safely with their
+            // own escape, but defence-in-depth wins — switch to the strict
+            // JavaScriptEncoder.Default so '<', '>', '&', and quotes come
+            // out as \uXXXX. Cheap, and removes a class of HTML-injection
+            // surprise for clients that pipe responses straight into innerHTML.
+            builder.Services.AddControllers().AddJsonOptions(o =>
+            {
+                o.JsonSerializerOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Default;
+            });
             builder.Services.AddEndpointsApiExplorer();
 
             // Idempotency cache: Redis when configured (multi-pod safe), in-memory
