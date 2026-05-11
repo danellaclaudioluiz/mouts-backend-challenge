@@ -1,0 +1,65 @@
+# Production override — layered on top of docker-compose.yml via
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml ...
+#
+# Differences from the base file (which targets dev workflows):
+#   • TLS terminates on the host's nginx; the container speaks plain
+#     HTTP on 127.0.0.1:8080. ASPNETCORE_HTTPS_PORTS is blanked.
+#   • Postgres / Redis are NOT published to the host — only reachable
+#     via the docker bridge from the WebApi container.
+#   • Mongo is profiled out (the app never touches it).
+#   • A one-shot `migrate` service applies EF Core migrations against
+#     the freshly-started Postgres before the WebApi boots.
+#   • `restart: unless-stopped` on every long-running service.
+
+services:
+  ambev.developerevaluation.webapi:
+    environment:
+      # TLS lives at the edge — Kestrel inside the container should
+      # never bind to 8081; blank disables the HTTPS endpoint without
+      # killing the dev override.
+      - ASPNETCORE_HTTPS_PORTS=
+      - ASPNETCORE_HTTP_PORTS=8080
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      ambev.developerevaluation.database:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ambev.developerevaluation.database:
+    # Drop the dev port publication (5432). The DB is only reachable
+    # from the WebApi container via the compose bridge in production.
+    ports: []
+    restart: unless-stopped
+
+  ambev.developerevaluation.cache:
+    ports: []
+    restart: unless-stopped
+
+  # MongoDB is declared in the base compose for parity with the
+  # challenge's tech-stack hint, but no .NET project actually depends
+  # on it. The `never` profile means it only starts when explicitly
+  # opted in via `--profile never` — i.e. effectively off in prod.
+  ambev.developerevaluation.nosql:
+    profiles: ["never"]
+
+  # One-shot migrator: applies EF Core migrations against Postgres
+  # using the idempotent SQL script generated at build time. Exits 0
+  # once the script completes; the WebApi gates on this completion via
+  # service_completed_successfully above.
+  migrate:
+    image: mouts-migrate:local
+    build:
+      context: .
+      dockerfile: src/Ambev.DeveloperEvaluation.ORM/Migrate.Dockerfile
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - PGHOST=ambev.developerevaluation.database
+      - PGUSER=${POSTGRES_USER}
+      - PGDATABASE=${POSTGRES_DB}
+    depends_on:
+      ambev.developerevaluation.database:
+        condition: service_healthy
+    restart: "no"
