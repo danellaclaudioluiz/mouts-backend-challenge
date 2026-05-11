@@ -65,9 +65,13 @@ public class Sale : BaseEntity
     }
 
     /// <summary>
-    /// Creates a new sale with header data only. Items must be added afterwards
-    /// via <see cref="AddItem"/>; <see cref="SaleCreatedEvent"/> is raised
-    /// once construction completes.
+    /// Creates a new sale with header data only. Use this overload only
+    /// when the items will be added in a separate, controlled flow (tests,
+    /// importers). Production callers — i.e. the CreateSale handler — use
+    /// the items-aware overload below so <see cref="SaleCreatedEvent"/>
+    /// fires atomically with construction and the aggregate is never
+    /// observed in a half-built "no items yet" state by a downstream
+    /// consumer.
     /// </summary>
     public static Sale Create(
         string saleNumber,
@@ -92,6 +96,43 @@ public class Sale : BaseEntity
             IsCancelled = false,
             TotalAmount = 0m
         };
+
+        return sale;
+    }
+
+    /// <summary>
+    /// Item descriptor used by the items-aware <see cref="Create(string, DateTime, Guid, string, Guid, string, IEnumerable{Sale.NewItem})"/>
+    /// factory below. A record so callers (typically handlers mapping from a
+    /// command DTO) don't have to construct a SaleItem directly.
+    /// </summary>
+    public sealed record NewItem(Guid ProductId, string ProductName, int Quantity, decimal UnitPrice);
+
+    /// <summary>
+    /// Items-aware factory. Validates the header, walks every item through
+    /// the same invariants <see cref="AddItem"/> enforces, and raises
+    /// <see cref="SaleCreatedEvent"/> with the FINAL totals — encapsulating
+    /// the previous two-step pattern (Create → AddItem* → MarkCreated)
+    /// behind a single atomic call so callers can't accidentally publish
+    /// a half-built aggregate.
+    /// </summary>
+    public static Sale Create(
+        string saleNumber,
+        DateTime saleDate,
+        Guid customerId,
+        string customerName,
+        Guid branchId,
+        string branchName,
+        IEnumerable<NewItem> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        var sale = Create(saleNumber, saleDate, customerId, customerName, branchId, branchName);
+        foreach (var item in items)
+            sale.AddItem(item.ProductId, item.ProductName, item.Quantity, item.UnitPrice);
+
+        sale.AddDomainEvent(new SaleCreatedEvent(
+            sale.Id, sale.SaleNumber, sale.CustomerId, sale.BranchId,
+            sale.TotalAmount, sale._items.Count));
 
         return sale;
     }
@@ -221,10 +262,13 @@ public class Sale : BaseEntity
     }
 
     /// <summary>
-    /// Raises a SaleCreatedEvent. Called by application handlers after the
-    /// initial AddItem loop completes so the event payload reflects final
-    /// totals.
+    /// Kept ONLY for the tests that still construct the aggregate via the
+    /// items-less Create + AddItem path. New code paths use the items-aware
+    /// <c>Sale.Create(..., items)</c> overload which raises
+    /// SaleCreatedEvent automatically. Marked obsolete to nudge callers
+    /// toward the encapsulated factory.
     /// </summary>
+    [Obsolete("Use the items-aware Sale.Create overload; this method exists only for two-step legacy construction in tests.")]
     public void MarkCreated()
     {
         AddDomainEvent(new SaleCreatedEvent(

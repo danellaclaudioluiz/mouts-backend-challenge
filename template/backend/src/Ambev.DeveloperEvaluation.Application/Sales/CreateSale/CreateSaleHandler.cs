@@ -44,18 +44,17 @@ public class CreateSaleHandler : IRequestHandler<CreateSaleCommand, SaleDto>
             throw new ConflictException(
                 $"A sale with number '{command.SaleNumber}' already exists.");
 
+        // Items-aware factory raises SaleCreatedEvent internally with the
+        // final totals — no explicit MarkCreated() call, no risk of
+        // accidentally observing a half-built aggregate.
         var sale = Sale.Create(
             command.SaleNumber,
             command.SaleDate,
             command.CustomerId,
             command.CustomerName,
             command.BranchId,
-            command.BranchName);
-
-        foreach (var item in command.Items)
-            sale.AddItem(item.ProductId, item.ProductName, item.Quantity, item.UnitPrice);
-
-        sale.MarkCreated();
+            command.BranchName,
+            command.Items.Select(i => new Sale.NewItem(i.ProductId, i.ProductName, i.Quantity, i.UnitPrice)));
 
         // Stage events first; the repository's SaveChanges commits both the
         // sale row and the outbox rows atomically.

@@ -74,6 +74,51 @@ Project files: see the solution at
 
 ## Request lifecycle: `POST /api/v1/sales`
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant API as SalesController
+    participant IM as IdempotencyMiddleware
+    participant H as CreateSaleHandler
+    participant Sale as Sale aggregate
+    participant Pub as IDomainEventPublisher
+    participant DB as Postgres
+    participant DSP as OutboxDispatcherService
+    participant Brk as Broker / log sink
+
+    C->>API: POST /api/v1/sales<br/>(Bearer, Idempotency-Key)
+    API->>IM: pass through
+    IM->>IM: SHA-256(body) → cache lookup
+    alt cached 2xx response
+        IM-->>C: replay 201 byte-equal
+    else fresh request
+        IM->>H: dispatch via MediatR
+        H->>Sale: Sale.Create(header, items)
+        Note over Sale: validate invariants;<br/>raise SaleCreatedEvent
+        H->>Pub: PublishAsync(SaleCreatedEvent)
+        Pub->>DB: stage OutboxMessage on context
+        H->>DB: SaveChanges (sale + outbox in one tx)
+        DB-->>DB: trigger NOTIFY outbox_pending
+        DB-->>H: row count + RowVersion
+        H-->>API: SaleDto
+        API-->>IM: 201 + ETag + Location
+        IM->>IM: cache body for 24h
+        IM-->>C: 201
+        DB->>DSP: NOTIFY wakes LISTEN connection
+        DSP->>DB: SELECT FOR UPDATE SKIP LOCKED;<br/>set LockedUntil
+        DSP->>Brk: DeliverAsync (envelope with eventId)
+        DSP->>DB: SET ProcessedAt = now()
+    end
+```
+
+Two-phase dispatch keeps the row-lock window short: the SQL transaction
+claims a batch and commits in milliseconds; the slow broker round-trip
+runs **outside** the transaction so the lock isn't held while the
+network is busy. NOTIFY/LISTEN cuts the publish latency from "up to 5 s"
+(the polling interval) to sub-second; the poll fallback handles dropped
+notifications.
+
 End-to-end path through the layers. File:line references are below
 each step.
 

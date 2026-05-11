@@ -1,0 +1,25 @@
+{
+  "_comment": "Stryker.NET runs in CI nightly + on workflow_dispatch (see .github/workflows/ci.yml mutation-testing job). Scoped to the layers whose mutations the tests should catch: Domain (aggregate invariants) and Application (handler orchestration). ORM/WebApi mutations would mostly produce 'no test running covers this' noise and would slow the wall clock.",
+  "stryker-config": {
+    "project-info": {
+      "name": "Ambev.DeveloperEvaluation"
+    },
+    "solution": "Ambev.DeveloperEvaluation.sln",
+    "test-projects": [
+      "tests/Ambev.DeveloperEvaluation.Unit/Ambev.DeveloperEvaluation.Unit.csproj"
+    ],
+    "mutate": [
+      "src/Ambev.DeveloperEvaluation.Domain/**/*.cs",
+      "src/Ambev.DeveloperEvaluation.Application/**/*.cs",
+      "!**/Migrations/**/*.cs"
+    ],
+    "thresholds": {
+      "high": 85,
+      "low": 70,
+      "break": 60
+    },
+    "reporters": ["cleartext", "html", "progress"],
+    "concurrency": 4,
+    "mutation-level": "Standard"
+  }
+}

@@ -181,7 +181,46 @@ public class Program
                     failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
                     tags: new[] { "readiness" });
 
-            builder.Services.AddSwaggerGen();
+            builder.Services.AddSwaggerGen(c =>
+            {
+                c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+                {
+                    Title = "Ambev DeveloperStore — Sales API",
+                    Version = "v1",
+                    Description = "REST API for the Sales aggregate. JWT bearer auth, ETag/If-Match optimistic concurrency, Idempotency-Key, transactional outbox."
+                });
+
+                // Wire the XML doc file emitted by GenerateDocumentationFile.
+                var xmlPath = Path.Combine(AppContext.BaseDirectory,
+                    $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml");
+                if (File.Exists(xmlPath))
+                    c.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
+
+                // Bearer scheme so the "Authorize" button in Swagger UI lets
+                // operators paste a JWT and try authenticated endpoints.
+                c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                {
+                    Name = "Authorization",
+                    Description = "Paste only the JWT, no 'Bearer ' prefix.",
+                    In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+                    Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+                    Scheme = "bearer",
+                    BearerFormat = "JWT"
+                });
+                c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+                {
+                    [new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                    {
+                        Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                        {
+                            Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                            Id = "Bearer"
+                        }
+                    }] = Array.Empty<string>()
+                });
+
+                c.OperationFilter<Swagger.HeaderOperationFilter>();
+            });
 
             var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
             if (string.IsNullOrWhiteSpace(connectionString))

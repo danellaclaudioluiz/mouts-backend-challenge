@@ -1,0 +1,48 @@
+# Dependabot watches every NuGet manifest in the solution + GitHub Actions
+# in .github/workflows. Security updates land immediately; cosmetic
+# version bumps batch into a weekly PR so the queue stays manageable.
+
+version: 2
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/template/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "nuget"
+    groups:
+      microsoft-runtime:
+        patterns:
+          - "Microsoft.AspNetCore.*"
+          - "Microsoft.EntityFrameworkCore.*"
+          - "Microsoft.Extensions.*"
+      opentelemetry:
+        patterns:
+          - "OpenTelemetry.*"
+      test-tooling:
+        patterns:
+          - "xunit*"
+          - "NSubstitute*"
+          - "FluentAssertions*"
+          - "Bogus*"
+          - "Testcontainers*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "ci"
+      - "github-actions"
+
+  - package-ecosystem: "docker"
+    directory: "/template/backend/src/Ambev.DeveloperEvaluation.WebApi"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "docker"
