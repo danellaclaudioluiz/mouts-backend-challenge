@@ -11,6 +11,7 @@ public class DefaultContext : DbContext
     public DbSet<Sale> Sales { get; set; }
     public DbSet<SaleItem> SaleItems { get; set; }
     public DbSet<OutboxMessage> OutboxMessages { get; set; }
+    public DbSet<RefreshToken> RefreshTokens { get; set; }
 
     public DefaultContext(DbContextOptions<DefaultContext> options) : base(options)
     {

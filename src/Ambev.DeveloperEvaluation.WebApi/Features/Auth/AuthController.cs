@@ -1,6 +1,9 @@
+using System.IdentityModel.Tokens.Jwt;
 using Ambev.DeveloperEvaluation.Application.Auth.AuthenticateUser;
+using Ambev.DeveloperEvaluation.Application.Auth.RefreshToken;
 using Ambev.DeveloperEvaluation.WebApi.Common;
 using Ambev.DeveloperEvaluation.WebApi.Features.Auth.AuthenticateUserFeature;
+using Ambev.DeveloperEvaluation.WebApi.Features.Auth.RefreshTokenFeature;
 using Asp.Versioning;
 using AutoMapper;
 using MediatR;
@@ -47,5 +50,50 @@ public class AuthController : BaseController
         var response = await _mediator.Send(command, cancellationToken);
 
         return Ok(_mapper.Map<AuthenticateUserResponse>(response));
+    }
+
+    /// <summary>
+    /// Rotates a refresh token for a fresh access JWT + a fresh refresh
+    /// token. Anonymous: by the time a client calls this, its access
+    /// JWT has usually already expired. If the caller does present a
+    /// still-valid Authorization header, the handler denylists that
+    /// access token's jti so it cannot be reused alongside the new one.
+    /// </summary>
+    [AllowAnonymous]
+    [EnableRateLimiting(Program.AuthStrictRateLimitPolicy)]
+    [HttpPost("refresh")]
+    [ProducesResponseType(typeof(ApiResponseWithData<RefreshTokenResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Refresh(
+        [FromBody] RefreshTokenRequest request,
+        CancellationToken cancellationToken)
+    {
+        var command = _mapper.Map<RefreshTokenCommand>(request);
+
+        // Best-effort jti extraction from the caller's current bearer
+        // token. Don't validate signature here — that's the JwtBearer
+        // pipeline's job; we only want the jti/exp so we can denylist
+        // it after rotation.
+        var auth = Request.Headers.Authorization.ToString();
+        if (auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var raw = auth.Substring("Bearer ".Length).Trim();
+                var jwt = new JwtSecurityTokenHandler().ReadJwtToken(raw);
+                command.CurrentAccessTokenJti = jwt.Id;
+                var remaining = jwt.ValidTo - DateTime.UtcNow;
+                command.CurrentAccessTokenRemainingLifetime =
+                    remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+            }
+            catch
+            {
+                // Malformed token — nothing to denylist, ignore.
+            }
+        }
+
+        var response = await _mediator.Send(command, cancellationToken);
+        return Ok(_mapper.Map<RefreshTokenResponse>(response));
     }
 }

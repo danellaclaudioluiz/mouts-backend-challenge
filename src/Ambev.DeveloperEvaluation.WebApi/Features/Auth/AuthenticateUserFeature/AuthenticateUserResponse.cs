@@ -26,4 +26,15 @@ public sealed class AuthenticateUserResponse
     /// Gets or sets the user's role in the system
     /// </summary>
     public string Role { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Opaque rotation token. Pair with the JWT during the next
+    /// <c>POST /auth/refresh</c> once the access token expires.
+    /// </summary>
+    public string RefreshToken { get; set; } = string.Empty;
+
+    /// <summary>
+    /// UTC expiry of <see cref="RefreshToken"/>.
+    /// </summary>
+    public DateTime RefreshTokenExpiresAt { get; set; }
 }

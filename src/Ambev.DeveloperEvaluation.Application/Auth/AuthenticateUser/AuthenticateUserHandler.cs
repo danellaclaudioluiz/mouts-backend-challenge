@@ -1,26 +1,37 @@
-using System.Threading;
-using System.Threading.Tasks;
 using Ambev.DeveloperEvaluation.Common.Security;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
 using Ambev.DeveloperEvaluation.Domain.Specifications;
 using MediatR;
+using Microsoft.Extensions.Configuration;
+using DomainRefreshToken = Ambev.DeveloperEvaluation.Domain.Entities.RefreshToken;
 
 namespace Ambev.DeveloperEvaluation.Application.Auth.AuthenticateUser
 {
     public class AuthenticateUserHandler : IRequestHandler<AuthenticateUserCommand, AuthenticateUserResult>
     {
+        private const double DefaultRefreshLifetimeHours = 168; // 7 days
+
         private readonly IUserRepository _userRepository;
         private readonly IPasswordHasher _passwordHasher;
         private readonly IJwtTokenGenerator _jwtTokenGenerator;
+        private readonly IRefreshTokenGenerator _refreshTokenGenerator;
+        private readonly IRefreshTokenRepository _refreshTokenRepository;
+        private readonly IConfiguration _configuration;
 
         public AuthenticateUserHandler(
             IUserRepository userRepository,
             IPasswordHasher passwordHasher,
-            IJwtTokenGenerator jwtTokenGenerator)
+            IJwtTokenGenerator jwtTokenGenerator,
+            IRefreshTokenGenerator refreshTokenGenerator,
+            IRefreshTokenRepository refreshTokenRepository,
+            IConfiguration configuration)
         {
             _userRepository = userRepository;
             _passwordHasher = passwordHasher;
             _jwtTokenGenerator = jwtTokenGenerator;
+            _refreshTokenGenerator = refreshTokenGenerator;
+            _refreshTokenRepository = refreshTokenRepository;
+            _configuration = configuration;
         }
 
 
@@ -52,12 +63,21 @@ namespace Ambev.DeveloperEvaluation.Application.Auth.AuthenticateUser
 
             var token = _jwtTokenGenerator.GenerateToken(user);
 
+            var refreshLifetime = TimeSpan.FromHours(
+                _configuration.GetValue<double?>("Jwt:RefreshTokenLifetimeHours")
+                ?? DefaultRefreshLifetimeHours);
+            var (rawRefresh, refreshHash) = _refreshTokenGenerator.Generate();
+            var refreshEntity = DomainRefreshToken.Issue(user.Id, refreshHash, refreshLifetime);
+            await _refreshTokenRepository.CreateAsync(refreshEntity, cancellationToken);
+
             return new AuthenticateUserResult
             {
                 Token = token,
                 Email = user.Email,
                 Name = user.Username,
-                Role = user.Role.ToString()
+                Role = user.Role.ToString(),
+                RefreshToken = rawRefresh,
+                RefreshTokenExpiresAt = refreshEntity.ExpiresAt
             };
         }
     }

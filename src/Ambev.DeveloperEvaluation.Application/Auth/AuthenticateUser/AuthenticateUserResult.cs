@@ -34,4 +34,16 @@ public sealed class AuthenticateUserResult
     /// Gets or sets the user's role
     /// </summary>
     public string Role { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Opaque long-lived rotation token. The client stores this and
+    /// trades it at <c>POST /auth/refresh</c> for a fresh access token
+    /// once the JWT expires. Not a JWT — just random bytes.
+    /// </summary>
+    public string RefreshToken { get; set; } = string.Empty;
+
+    /// <summary>
+    /// UTC expiry of <see cref="RefreshToken"/>.
+    /// </summary>
+    public DateTime RefreshTokenExpiresAt { get; set; }
 }

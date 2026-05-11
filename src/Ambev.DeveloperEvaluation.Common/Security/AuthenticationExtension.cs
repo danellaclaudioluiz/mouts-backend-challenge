@@ -62,6 +62,26 @@ namespace Ambev.DeveloperEvaluation.Common.Security
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.Zero
                 };
+                // jti denylist: every authenticated request consults the
+                // distributed cache. A revoked jti (added at /auth/refresh
+                // or logout) flips the token to Failed → 401, even though
+                // the signature and lifetime are still valid.
+                x.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = async ctx =>
+                    {
+                        var denylist = ctx.HttpContext.RequestServices
+                            .GetService<IJtiDenylist>();
+                        if (denylist is null) return;
+                        var jti = ctx.Principal?.FindFirst(
+                            System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
+                        if (!string.IsNullOrWhiteSpace(jti) &&
+                            await denylist.IsRevokedAsync(jti, ctx.HttpContext.RequestAborted))
+                        {
+                            ctx.Fail("Token revoked.");
+                        }
+                    }
+                };
             });
 
             services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
