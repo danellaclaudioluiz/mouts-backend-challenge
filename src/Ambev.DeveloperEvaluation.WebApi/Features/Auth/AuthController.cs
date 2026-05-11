@@ -19,6 +19,10 @@ namespace Ambev.DeveloperEvaluation.WebApi.Features.Auth;
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
+// All responses are wrapped in ApiResponseWithData<T> as JSON; without
+// this Swagger reports 200s as text/plain (default when the request
+// pipeline can't infer a single content type from controller metadata).
+[Produces("application/json")]
 public class AuthController : BaseController
 {
     private readonly IMediator _mediator;

@@ -19,6 +19,7 @@ namespace Ambev.DeveloperEvaluation.WebApi.Features.Users;
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
+[Produces("application/json")]
 public class UsersController : BaseController
 {
     private readonly IMediator _mediator;

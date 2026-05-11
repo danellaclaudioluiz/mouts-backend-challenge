@@ -220,7 +220,69 @@ public class Program
                 {
                     Title = "Ambev DeveloperStore — Sales API",
                     Version = "v1",
-                    Description = "REST API for the Sales aggregate. JWT bearer auth, ETag/If-Match optimistic concurrency, Idempotency-Key, transactional outbox."
+                    Description = """
+                        Sales aggregate REST API — Mouts / Ambev senior-developer evaluation
+                        ([repo](https://github.com/danellaclaudioluiz/mouts-backend-challenge)).
+
+                        ### Quick start
+                        1. **Sign up** — `POST /api/v1/Users` (anonymous). Role is hard-coded to `Customer` server-side, so a smuggled `"role":"Admin"` in the body is ignored.
+                        2. **Authenticate** — `POST /api/v1/Auth`. Returns `token` (8 h JWT) + opaque `refreshToken` (one-shot rotation).
+                        3. Click **Authorize** above and paste the raw JWT (no `Bearer ` prefix).
+                        4. Exercise the **Sales** endpoints — every mutation is gated by `If-Match` (ETag) and may carry an `Idempotency-Key` (the middleware replays the cached 2xx for 24 h).
+
+                        ### Cross-cutting behaviour
+                        - **JWT bearer auth**: `iss=https://mouts.danellaclaudioluiz.com.br`, `aud=mouts-sales-api`, HS256, 8 h lifetime, `jti` denylisted on refresh-rotation.
+                        - **Optimistic concurrency**: every `Sales` row has a `RowVersion` exposed as `ETag`; `PUT` / `DELETE` / `PATCH` honour `If-Match` and return **412** on mismatch.
+                        - **Idempotency-Key** on `POST /api/v1/Sales`: replay-safe; same key + different body returns **422**.
+                        - **Transactional outbox**: every mutation emits `sale.created.v1` / `sale.modified.v1` / `sale.cancelled.v1` / `sale.item_cancelled.v1` to `OutboxMessages`, drained by a background dispatcher.
+                        - **Rate limit**: auth-strict bucket is 5 req/min/IP on `/api/v1/Auth*`; global budget is 200 req/min/principal.
+                        """,
+                    Contact = new Microsoft.OpenApi.Models.OpenApiContact
+                    {
+                        Name = "Repository",
+                        Url = new Uri("https://github.com/danellaclaudioluiz/mouts-backend-challenge")
+                    },
+                    License = new Microsoft.OpenApi.Models.OpenApiLicense
+                    {
+                        Name = "MIT"
+                    }
+                });
+
+                // Servers: explicit so Swagger UI's "Try it out" hits the
+                // live URL even when reverse-proxied (otherwise it falls
+                // back to window.location.origin which can be wrong
+                // behind X-Forwarded-Host).
+                c.AddServer(new Microsoft.OpenApi.Models.OpenApiServer
+                {
+                    Url = "https://mouts.danellaclaudioluiz.com.br",
+                    Description = "Production (live demo)"
+                });
+                c.AddServer(new Microsoft.OpenApi.Models.OpenApiServer
+                {
+                    Url = "http://localhost:5119",
+                    Description = "Local dev"
+                });
+
+                // Operation IDs default to ugly Method+Verb concatenations
+                // ('PostApiV1Sales') — openapi-generator and the like
+                // produce nicer client method names if we hand them
+                // 'Auth_Authenticate' / 'Sales_Create' shapes.
+                c.CustomOperationIds(api =>
+                {
+                    var action = api.ActionDescriptor.RouteValues["action"];
+                    var controller = api.ActionDescriptor.RouteValues["controller"];
+                    return string.IsNullOrWhiteSpace(action) ? controller : $"{controller}_{action}";
+                });
+
+                // Tag order: Auth → Users → Sales mirrors the natural
+                // onboarding flow (sign up → log in → use the API).
+                // Without this Swashbuckle alphabetises (Auth, Sales, Users).
+                var tagOrder = new[] { "Auth", "Users", "Sales" };
+                c.OrderActionsBy(api =>
+                {
+                    var ctrl = api.ActionDescriptor.RouteValues["controller"] ?? "";
+                    var idx = Array.IndexOf(tagOrder, ctrl);
+                    return $"{(idx == -1 ? 9 : idx)}_{ctrl}_{api.HttpMethod}_{api.RelativePath}";
                 });
 
                 // Wire the XML doc file emitted by GenerateDocumentationFile.
@@ -253,6 +315,7 @@ public class Program
                 });
 
                 c.OperationFilter<Swagger.HeaderOperationFilter>();
+                c.SchemaFilter<Swagger.SwaggerExampleFilter>();
             });
 
             var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -411,7 +474,19 @@ public class Program
             if (swaggerEnabled)
             {
                 app.UseSwagger();
-                app.UseSwaggerUI();
+                app.UseSwaggerUI(ui =>
+                {
+                    ui.DocumentTitle = "Mouts Sales API — Swagger";
+                    ui.SwaggerEndpoint("/swagger/v1/swagger.json", "Sales API v1");
+                    // Collapse the operation list on first load — the rich
+                    // OpenApiInfo description is the landing pitch, not a
+                    // 30-row wall of endpoints.
+                    ui.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.None);
+                    ui.DefaultModelsExpandDepth(-1);   // hide the Schemas section by default
+                    ui.DisplayRequestDuration();       // show ms after Try it out
+                    ui.EnableDeepLinking();            // /swagger#/Sales/Sales_Create works
+                    ui.EnableFilter();                 // filter operations by substring
+                });
             }
 
             // HSTS for any non-Development environment. Tells browsers to

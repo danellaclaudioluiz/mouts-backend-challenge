@@ -17,11 +17,18 @@ public sealed class HeaderOperationFilter : IOperationFilter
         var method = context.ApiDescription.HttpMethod?.ToUpperInvariant();
         var path = context.ApiDescription.RelativePath ?? string.Empty;
         var isSalesRoute = path.Contains("sales", StringComparison.OrdinalIgnoreCase);
+        // /auth/* is anonymous and stateless from the idempotency lens —
+        // replaying a login or a one-shot refresh under the same key
+        // would either be a no-op (login is already non-mutating in our
+        // model) or actively wrong (refresh is one-shot and revokes the
+        // row on first call). Excluded so the Swagger doc doesn't lie.
+        var isAuthRoute = path.StartsWith("api/v1/Auth", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("api/v1/auth", StringComparison.OrdinalIgnoreCase);
 
-        // Idempotency-Key is honoured by the IdempotencyMiddleware on every
-        // POST. Document it as optional with a 256-char cap so client
-        // generators include it in the typed SDK.
-        if (method == "POST")
+        // Idempotency-Key is honoured by the IdempotencyMiddleware on
+        // every mutating call EXCEPT auth. Document it as optional with
+        // a 256-char cap so client generators include it in the typed SDK.
+        if (method == "POST" && !isAuthRoute)
         {
             operation.Parameters.Add(new OpenApiParameter
             {

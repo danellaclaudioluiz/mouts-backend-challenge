@@ -20,6 +20,7 @@ namespace Ambev.DeveloperEvaluation.WebApi.Features.Sales;
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
+[Produces("application/json")]
 public class SalesController : BaseController
 {
     private readonly IMediator _mediator;
