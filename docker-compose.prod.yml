@@ -45,11 +45,14 @@ services:
   ambev.developerevaluation.cache:
     ports: []
     # The base compose ships read_only:true + cap_drop:ALL, but the
-    # Redis entrypoint needs to drop privileges from root → redis
-    # (SETUID/SETGID) and write its RDB snapshot to /data. Restore the
-    # two caps and mount /data as tmpfs (no persistence is required —
-    # the cache is best-effort).
+    # Redis docker-entrypoint.sh needs to `chown redis:redis /data`,
+    # then drop privileges from root → redis via gosu. That requires
+    # CHOWN + FOWNER for the chown walk and SETUID/SETGID for gosu's
+    # setuid syscalls. /data is mounted tmpfs because no persistence
+    # is required — the cache is best-effort by design.
     cap_add:
+      - CHOWN
+      - FOWNER
       - SETUID
       - SETGID
     tmpfs:
