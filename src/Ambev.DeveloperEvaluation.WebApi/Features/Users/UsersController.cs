@@ -31,11 +31,12 @@ public class UsersController : BaseController
         _mapper = mapper;
     }
 
-    /// <summary>
-    /// Creates a new user. Public on purpose — this is the self-service
-    /// signup endpoint. The handler hard-codes role=Customer and
-    /// status=Active so the request body cannot escalate privileges.
-    /// </summary>
+    /// <summary>Self-service signup (anonymous).</summary>
+    /// <remarks>
+    /// The handler hard-codes `role=Customer` and `status=Active` server-
+    /// side, so a smuggled `"role":"Admin"` in the request body cannot
+    /// escalate privileges.
+    /// </remarks>
     [AllowAnonymous]
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponseWithData<CreateUserResponse>), StatusCodes.Status201Created)]

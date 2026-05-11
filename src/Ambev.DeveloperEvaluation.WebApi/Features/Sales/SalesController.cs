@@ -32,7 +32,12 @@ public class SalesController : BaseController
         _mapper = mapper;
     }
 
-    /// <summary>Creates a new sale with all of its items.</summary>
+    /// <summary>Create a sale (header + items).</summary>
+    /// <remarks>
+    /// Idempotent under `Idempotency-Key`: the middleware caches the
+    /// first 2xx for 24h and replays it byte-equal on retries with the
+    /// same body; a different body under the same key returns **422**.
+    /// </remarks>
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponseWithData<SaleDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -58,7 +63,13 @@ public class SalesController : BaseController
             });
     }
 
-    /// <summary>Retrieves a sale by id.</summary>
+    /// <summary>Get a sale by id.</summary>
+    /// <remarks>
+    /// Returns the sale with all of its line items. Emits an `ETag`
+    /// header (the current `RowVersion`) which the client should echo
+    /// back as `If-Match` on subsequent `PUT` / `DELETE` / `PATCH`.
+    /// Reads are served from the distributed cache when warm.
+    /// </remarks>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponseWithData<SaleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -74,11 +85,13 @@ public class SalesController : BaseController
         return Ok(result);
     }
 
-    /// <summary>
-    /// Lists sales with pagination, filtering and ordering per the API conventions.
-    /// Items are returned as header-only summaries — fetch a specific sale to
-    /// see its line items.
-    /// </summary>
+    /// <summary>List sales (paginated, filterable, orderable).</summary>
+    /// <remarks>
+    /// Rows are returned as header-only summaries — fetch a specific
+    /// sale by id to see its line items. Supports `_page`, `_size` (≤
+    /// 100), `_order` (whitelisted columns, comma-separated, with
+    /// `asc`/`desc`), and the usual date/customer/branch/status filters.
+    /// </remarks>
     [HttpGet]
     [ProducesResponseType(typeof(PaginatedResponse<SaleSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -102,11 +115,13 @@ public class SalesController : BaseController
         });
     }
 
-    /// <summary>
-    /// Replaces the sale identified by id (header + items). If the request
-    /// carries an <c>If-Match</c> header, its value is compared to the current
-    /// sale's ETag — a mismatch returns 412 Precondition Failed.
-    /// </summary>
+    /// <summary>Replace a sale (header + items).</summary>
+    /// <remarks>
+    /// Optimistic concurrency: send the ETag returned by the previous
+    /// `GET` / `POST` in an `If-Match` header. A mismatch returns
+    /// **412 Precondition Failed**. Pass `If-Match: *` to bypass the
+    /// check explicitly.
+    /// </remarks>
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponseWithData<SaleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -129,10 +144,12 @@ public class SalesController : BaseController
         return Ok(result);
     }
 
-    /// <summary>
-    /// Hard-deletes a sale and its items. Honours <c>If-Match</c> the same way
-    /// PUT does — a mismatched ETag returns 412.
-    /// </summary>
+    /// <summary>Hard-delete a sale (cascades to its items).</summary>
+    /// <remarks>
+    /// Honours `If-Match` the same way `PUT` does — a mismatched ETag
+    /// returns **412**. Responds with **204 No Content** on success
+    /// (no body, no envelope — REST idiom for delete).
+    /// </remarks>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -148,7 +165,12 @@ public class SalesController : BaseController
         return NoContent();
     }
 
-    /// <summary>Soft-cancels a sale (sets IsCancelled = true). Idempotent.</summary>
+    /// <summary>Soft-cancel a sale.</summary>
+    /// <remarks>
+    /// Sets `IsCancelled = true` and raises a `SaleCancelledEvent` on
+    /// the outbox. Idempotent: cancelling an already-cancelled sale
+    /// returns **200** without re-emitting the event.
+    /// </remarks>
     [HttpPatch("{id:guid}/cancel")]
     [ProducesResponseType(typeof(ApiResponseWithData<SaleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -162,7 +184,11 @@ public class SalesController : BaseController
         return Ok(result);
     }
 
-    /// <summary>Cancels a single item within a sale and recalculates the total.</summary>
+    /// <summary>Cancel a single item within a sale.</summary>
+    /// <remarks>
+    /// Marks the item cancelled, recalculates the sale's total, and
+    /// raises an `ItemCancelledEvent`. Idempotent on the item.
+    /// </remarks>
     [HttpPatch("{id:guid}/items/{itemId:guid}/cancel")]
     [ProducesResponseType(typeof(ApiResponseWithData<SaleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

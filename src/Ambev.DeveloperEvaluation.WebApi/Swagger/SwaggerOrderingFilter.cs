@@ -33,6 +33,21 @@ public sealed class SwaggerOrderingFilter : IDocumentFilter
 {
     private static readonly string[] TagOrder = { "Auth", "Users", "Sales" };
 
+    /// <summary>
+    /// Canonical tag metadata. Swashbuckle only auto-promotes a
+    /// controller's XML <c>&lt;summary&gt;</c> into a tag entry when
+    /// it sees one; SalesController lacks a class-level summary, so
+    /// without this the Swagger UI shows "Sales" with no description.
+    /// Declaring all three here also guarantees the group order is
+    /// stable even when Swashbuckle finds no XML at all.
+    /// </summary>
+    private static readonly OpenApiTag[] CanonicalTags =
+    {
+        new() { Name = "Auth",  Description = "Authentication & refresh-token rotation." },
+        new() { Name = "Users", Description = "Self-service signup + user lookup." },
+        new() { Name = "Sales", Description = "Sales aggregate CRUD with ETag/If-Match concurrency, Idempotency-Key, and transactional outbox." }
+    };
+
     private static readonly OperationType[] MethodOrder =
     {
         OperationType.Post,
@@ -63,11 +78,31 @@ public sealed class SwaggerOrderingFilter : IDocumentFilter
 
     private static void ReorderTags(OpenApiDocument doc)
     {
-        if (doc.Tags is null || doc.Tags.Count == 0) return;
-        doc.Tags = doc.Tags
-            .OrderBy(t => TagIndex(t.Name))
-            .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        // Build a fresh tag list from the canonical metadata so every
+        // group has a description, then append any other tag Swashbuckle
+        // discovered (defensive — there shouldn't be any).
+        doc.Tags ??= new List<OpenApiTag>();
+        var byName = doc.Tags.ToDictionary(
+            t => t.Name ?? string.Empty,
+            StringComparer.OrdinalIgnoreCase);
+
+        var rebuilt = new List<OpenApiTag>();
+        foreach (var canonical in CanonicalTags)
+        {
+            // Prefer the canonical description even if Swashbuckle
+            // promoted a less-rich one from XML comments.
+            rebuilt.Add(new OpenApiTag
+            {
+                Name = canonical.Name,
+                Description = canonical.Description
+            });
+            byName.Remove(canonical.Name);
+        }
+        foreach (var stragglers in byName.Values
+            .OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase))
+            rebuilt.Add(stragglers);
+
+        doc.Tags = rebuilt;
     }
 
     private static void ReorderPathsAndOperations(OpenApiDocument doc)

@@ -34,11 +34,12 @@ public class AuthController : BaseController
         _mapper = mapper;
     }
 
-    /// <summary>
-    /// Authenticates a user with their credentials. Must be anonymous —
-    /// the caller has no token yet. Bound to the auth-strict rate limit
-    /// (5 req/min/IP by default) to slow password brute force.
-    /// </summary>
+    /// <summary>Authenticate a user (returns access + refresh tokens).</summary>
+    /// <remarks>
+    /// Anonymous — the caller has no token yet. Gated by the auth-strict
+    /// rate limit (5 req/min/IP by default) so a password brute force
+    /// is capped at ~300 attempts/h/IP regardless of the global budget.
+    /// </remarks>
     [AllowAnonymous]
     [EnableRateLimiting(Program.AuthStrictRateLimitPolicy)]
     [HttpPost]
@@ -56,13 +57,14 @@ public class AuthController : BaseController
         return Ok(_mapper.Map<AuthenticateUserResponse>(response));
     }
 
-    /// <summary>
-    /// Rotates a refresh token for a fresh access JWT + a fresh refresh
-    /// token. Anonymous: by the time a client calls this, its access
-    /// JWT has usually already expired. If the caller does present a
-    /// still-valid Authorization header, the handler denylists that
-    /// access token's jti so it cannot be reused alongside the new one.
-    /// </summary>
+    /// <summary>Rotate a refresh token (one-shot) for a fresh access JWT.</summary>
+    /// <remarks>
+    /// Anonymous — by the time a client calls this its access JWT has
+    /// usually already expired. If the caller does present a still-valid
+    /// `Authorization` header, the handler denylists that access token's
+    /// `jti` so it cannot be reused alongside the new one. Replaying the
+    /// same refresh token after rotation returns **401**.
+    /// </remarks>
     [AllowAnonymous]
     [EnableRateLimiting(Program.AuthStrictRateLimitPolicy)]
     [HttpPost("refresh")]
