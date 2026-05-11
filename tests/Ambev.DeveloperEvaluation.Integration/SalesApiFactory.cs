@@ -124,19 +124,20 @@ public class SalesApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         using var scope = Services.CreateScope();
         var generator = scope.ServiceProvider.GetRequiredService<IJwtTokenGenerator>();
-        var user = new User
+        var user = User.Create(
+            username: "integration-tests",
+            passwordHash: "test-hash",
+            email: "integration@tests.local",
+            phone: "+5511999998888");
+        user.Id = userId ?? Guid.NewGuid();
+        var desiredRole = role switch
         {
-            Id = userId ?? Guid.NewGuid(),
-            Username = "integration-tests",
-            Email = "integration@tests.local",
-            Role = role switch
-            {
-                "Admin" => UserRole.Admin,
-                "Manager" => UserRole.Manager,
-                _ => UserRole.Customer
-            },
-            Status = UserStatus.Active
+            "Admin" => UserRole.Admin,
+            "Manager" => UserRole.Manager,
+            _ => UserRole.Customer
         };
+        if (desiredRole != UserRole.Customer)
+            user.ChangeRole(desiredRole);
         return generator.GenerateToken(user);
     }
 

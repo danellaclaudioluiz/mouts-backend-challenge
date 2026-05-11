@@ -30,26 +30,16 @@ public class CreateUserHandlerTests
     public async Task Handle_ValidRequest_ReturnsSuccessResponse()
     {
         var command = CreateUserHandlerTestData.GenerateValidCommand();
-        var user = new User
-        {
-            Id = Guid.NewGuid(),
-            Username = command.Username,
-            Email = command.Email,
-            Phone = command.Phone
-        };
-
-        var result = new CreateUserResult { Id = user.Id };
-
-        _mapper.Map<User>(command).Returns(user);
-        _mapper.Map<CreateUserResult>(user).Returns(result);
-        _userRepository.CreateAsync(Arg.Any<User>(), Arg.Any<CancellationToken>())
-            .Returns(user);
         _passwordHasher.HashPassword(Arg.Any<string>()).Returns("hashedPassword");
+        _userRepository.CreateAsync(Arg.Any<User>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<User>());
+        _mapper.Map<CreateUserResult>(Arg.Any<User>())
+            .Returns(ci => new CreateUserResult { Id = ci.Arg<User>().Id });
 
         var createUserResult = await _handler.Handle(command, CancellationToken.None);
 
         createUserResult.Should().NotBeNull();
-        createUserResult.Id.Should().Be(user.Id);
+        createUserResult.Id.Should().NotBeEmpty();
         await _userRepository.Received(1).CreateAsync(Arg.Any<User>(), Arg.Any<CancellationToken>());
     }
 
@@ -59,18 +49,12 @@ public class CreateUserHandlerTests
         var command = CreateUserHandlerTestData.GenerateValidCommand();
         var originalPassword = command.Password;
         const string hashedPassword = "h@shedPassw0rd";
-        var user = new User
-        {
-            Id = Guid.NewGuid(),
-            Username = command.Username,
-            Email = command.Email,
-            Phone = command.Phone
-        };
 
-        _mapper.Map<User>(command).Returns(user);
-        _userRepository.CreateAsync(Arg.Any<User>(), Arg.Any<CancellationToken>())
-            .Returns(user);
         _passwordHasher.HashPassword(originalPassword).Returns(hashedPassword);
+        _userRepository.CreateAsync(Arg.Any<User>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<User>());
+        _mapper.Map<CreateUserResult>(Arg.Any<User>())
+            .Returns(ci => new CreateUserResult { Id = ci.Arg<User>().Id });
 
         await _handler.Handle(command, CancellationToken.None);
 
@@ -83,27 +67,24 @@ public class CreateUserHandlerTests
     [Fact(DisplayName = "Handler hard-codes role=Customer and status=Active to defeat mass-assignment")]
     public async Task Handle_AlwaysAssignsCustomerRoleAndActiveStatus()
     {
+        // Even though the command DTO has no Role/Status fields, the factory
+        // (User.Create) hard-codes them. This test pins that contract.
         var command = CreateUserHandlerTestData.GenerateValidCommand();
-        var user = new User
-        {
-            Id = Guid.NewGuid(),
-            Username = command.Username,
-            Email = command.Email,
-            Phone = command.Phone,
-            // AutoMapper might leave these at defaults; the handler must
-            // overwrite them regardless of any field smuggled in earlier.
-            Role = UserRole.Admin,
-            Status = UserStatus.Suspended
-        };
-
-        _mapper.Map<User>(command).Returns(user);
+        _passwordHasher.HashPassword(Arg.Any<string>()).Returns("hashedPassword");
         _userRepository.CreateAsync(Arg.Any<User>(), Arg.Any<CancellationToken>())
-            .Returns(user);
+            .Returns(ci => ci.Arg<User>());
+        _mapper.Map<CreateUserResult>(Arg.Any<User>())
+            .Returns(ci => new CreateUserResult { Id = ci.Arg<User>().Id });
 
         await _handler.Handle(command, CancellationToken.None);
 
         await _userRepository.Received(1).CreateAsync(
-            Arg.Is<User>(u => u.Role == UserRole.Customer && u.Status == UserStatus.Active),
+            Arg.Is<User>(u =>
+                u.Role == UserRole.Customer &&
+                u.Status == UserStatus.Active &&
+                u.Username == command.Username &&
+                u.Email == command.Email &&
+                u.Phone == command.Phone),
             Arg.Any<CancellationToken>());
     }
 }

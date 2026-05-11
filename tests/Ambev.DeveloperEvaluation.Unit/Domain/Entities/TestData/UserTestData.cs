@@ -41,6 +41,31 @@ public static class UserTestData
     }
 
     /// <summary>
+    /// Builds a User with the supplied overrides on top of the valid
+    /// Faker defaults. Bogus writes through reflection so this hits the
+    /// aggregate's private setters — letting tests construct the
+    /// "invalid state" the factory would have refused, which is exactly
+    /// what the validator's negative-path tests need.
+    /// </summary>
+    public static User GenerateUserWith(
+        string? username = null,
+        string? email = null,
+        string? phone = null,
+        string? password = null,
+        UserStatus? status = null,
+        UserRole? role = null)
+    {
+        var faker = new Faker<User>()
+            .RuleFor(u => u.Username, username ?? new Faker().Internet.UserName())
+            .RuleFor(u => u.Password, password ?? $"Test@{new Faker().Random.Number(100, 999)}")
+            .RuleFor(u => u.Email, email ?? new Faker().Internet.Email())
+            .RuleFor(u => u.Phone, phone ?? $"+55{new Faker().Random.Number(11, 99)}{new Faker().Random.Number(100000000, 999999999)}")
+            .RuleFor(u => u.Status, status ?? UserStatus.Active)
+            .RuleFor(u => u.Role, role ?? UserRole.Customer);
+        return faker.Generate();
+    }
+
+    /// <summary>
     /// Generates a valid email address using Faker.
     /// The generated email will:
     /// - Follow the standard email format (user@domain.com)

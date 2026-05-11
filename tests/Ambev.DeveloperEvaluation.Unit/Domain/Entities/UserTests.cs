@@ -1,90 +1,125 @@
 using Ambev.DeveloperEvaluation.Domain.Entities;
 using Ambev.DeveloperEvaluation.Domain.Enums;
 using Ambev.DeveloperEvaluation.Unit.Domain.Entities.TestData;
+using Bogus;
 using FluentAssertions;
 using Xunit;
 
 namespace Ambev.DeveloperEvaluation.Unit.Domain.Entities;
 
 /// <summary>
-/// Contains unit tests for the User entity class.
-/// Tests cover status changes and validation scenarios.
+/// Behavioural tests for the User aggregate. Construction goes through
+/// the <see cref="User.Create"/> factory so every test starts from a
+/// known-valid state; state changes route through the intent-named
+/// methods (<c>Activate</c>, <c>Suspend</c>, <c>ChangeRole</c>) — the
+/// public surface no longer allows arbitrary property writes.
 /// </summary>
 public class UserTests
 {
-    /// <summary>
-    /// Tests that when a suspended user is activated, their status changes to Active.
-    /// </summary>
-    [Fact(DisplayName = "User status should change to Active when activated")]
+    [Fact(DisplayName = "Suspend() then Activate() flips Status back to Active")]
     public void Given_SuspendedUser_When_Activated_Then_StatusShouldBeActive()
     {
-        // Arrange
-        var user = UserTestData.GenerateValidUser();
-        user.Status = UserStatus.Suspended;
+        var user = NewValidUser();
+        user.Suspend();
+        user.Status.Should().Be(UserStatus.Suspended);
 
-        // Act
         user.Activate();
 
-        // Assert
         user.Status.Should().Be(UserStatus.Active);
     }
 
-    /// <summary>
-    /// Tests that when an active user is suspended, their status changes to Suspended.
-    /// </summary>
-    [Fact(DisplayName = "User status should change to Suspended when suspended")]
+    [Fact(DisplayName = "Suspend() on an active user sets Status to Suspended")]
     public void Given_ActiveUser_When_Suspended_Then_StatusShouldBeSuspended()
     {
-        // Arrange
-        var user = UserTestData.GenerateValidUser();
-        user.Status = UserStatus.Active;
+        var user = NewValidUser();
+        user.Status.Should().Be(UserStatus.Active, "factory hard-codes Active");
 
-        // Act
         user.Suspend();
 
-        // Assert
         user.Status.Should().Be(UserStatus.Suspended);
     }
 
-    /// <summary>
-    /// Tests that validation passes when all user properties are valid.
-    /// </summary>
-    [Fact(DisplayName = "Validation should pass for valid user data")]
+    [Fact(DisplayName = "Factory output validates clean")]
     public void Given_ValidUserData_When_Validated_Then_ShouldReturnValid()
     {
-        // Arrange
-        var user = UserTestData.GenerateValidUser();
+        var user = NewValidUser();
 
-        // Act
         var result = user.Validate();
 
-        // Assert
         result.IsValid.Should().BeTrue();
         result.Errors.Should().BeEmpty();
     }
 
-    /// <summary>
-    /// Tests that validation fails when user properties are invalid.
-    /// </summary>
-    [Fact(DisplayName = "Validation should fail for invalid user data")]
+    [Fact(DisplayName = "User assembled from invalid data fails the validator")]
     public void Given_InvalidUserData_When_Validated_Then_ShouldReturnInvalid()
     {
-        // Arrange
-        var user = new User
-        {
-            Username = "", // Invalid: empty
-            Password = UserTestData.GenerateInvalidPassword(), // Invalid: doesn't meet password requirements
-            Email = UserTestData.GenerateInvalidEmail(), // Invalid: not a valid email
-            Phone = UserTestData.GenerateInvalidPhone(), // Invalid: doesn't match pattern
-            Status = UserStatus.Unknown, // Invalid: cannot be Unknown
-            Role = UserRole.None // Invalid: cannot be None
-        };
+        // Bogus.Faker writes through reflection so it can hit our private
+        // setters — that lets the test fabricate the "bad state" the
+        // factory itself would have refused, exercising the validator's
+        // negative paths.
+        var user = new Faker<User>()
+            .RuleFor(u => u.Username, "")
+            .RuleFor(u => u.Password, UserTestData.GenerateInvalidPassword())
+            .RuleFor(u => u.Email, UserTestData.GenerateInvalidEmail())
+            .RuleFor(u => u.Phone, UserTestData.GenerateInvalidPhone())
+            .RuleFor(u => u.Status, UserStatus.Unknown)
+            .RuleFor(u => u.Role, UserRole.None)
+            .Generate();
 
-        // Act
         var result = user.Validate();
 
-        // Assert
         result.IsValid.Should().BeFalse();
         result.Errors.Should().NotBeEmpty();
     }
+
+    [Fact(DisplayName = "ChangeRole(None) is rejected — only meaningful roles are accepted")]
+    public void ChangeRole_None_Throws()
+    {
+        var user = NewValidUser();
+
+        var act = () => user.ChangeRole(UserRole.None);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact(DisplayName = "ChangeRole(Admin) on a signed-up Customer flips the role and bumps UpdatedAt")]
+    public void ChangeRole_PromotesCustomerToAdmin()
+    {
+        var user = NewValidUser();
+        var before = user.UpdatedAt;
+
+        user.ChangeRole(UserRole.Admin);
+
+        user.Role.Should().Be(UserRole.Admin);
+        user.UpdatedAt.Should().NotBe(before, "every mutation must touch UpdatedAt");
+    }
+
+    [Fact(DisplayName = "ChangePassword rewrites the hash and bumps UpdatedAt")]
+    public void ChangePassword_ReplacesHash()
+    {
+        var user = NewValidUser();
+        var originalHash = user.Password;
+
+        user.ChangePassword("new-hash-from-bcrypt");
+
+        user.Password.Should().Be("new-hash-from-bcrypt").And.NotBe(originalHash);
+        user.UpdatedAt.Should().NotBeNull();
+    }
+
+    [Fact(DisplayName = "Factory hard-codes role=Customer and status=Active (mass-assignment defence)")]
+    public void Factory_HardcodesCustomerAndActive()
+    {
+        var user = User.Create("alice", "bcrypt-hash", "alice@example.com", "+5511999998888");
+
+        user.Role.Should().Be(UserRole.Customer);
+        user.Status.Should().Be(UserStatus.Active);
+        user.Id.Should().NotBeEmpty();
+    }
+
+    private static User NewValidUser() =>
+        User.Create(
+            UserTestData.GenerateValidUsername(),
+            UserTestData.GenerateValidPassword(),
+            UserTestData.GenerateValidEmail(),
+            UserTestData.GenerateValidPhone());
 }

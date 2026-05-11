@@ -59,8 +59,7 @@ public class UserValidatorTests
     public void Given_InvalidUsername_When_Validated_Then_ShouldHaveError(string username)
     {
         // Arrange
-        var user = UserTestData.GenerateValidUser();
-        user.Username = username;
+        var user = UserTestData.GenerateUserWith(username: username);
 
         // Act
         var result = _validator.TestValidate(user);
@@ -79,8 +78,7 @@ public class UserValidatorTests
     public void Given_UsernameLongerThanMaximum_When_Validated_Then_ShouldHaveError()
     {
         // Arrange
-        var user = UserTestData.GenerateValidUser();
-        user.Username = UserTestData.GenerateLongUsername();
+        var user = UserTestData.GenerateUserWith(username: UserTestData.GenerateLongUsername());
 
         // Act
         var result = _validator.TestValidate(user);
@@ -102,8 +100,7 @@ public class UserValidatorTests
     public void Given_InvalidEmail_When_Validated_Then_ShouldHaveError()
     {
         // Arrange
-        var user = UserTestData.GenerateValidUser();
-        user.Email = UserTestData.GenerateInvalidEmail();
+        var user = UserTestData.GenerateUserWith(email: UserTestData.GenerateInvalidEmail());
 
         // Act
         var result = _validator.TestValidate(user);
@@ -127,8 +124,7 @@ public class UserValidatorTests
     public void Given_InvalidPassword_When_Validated_Then_ShouldHaveError()
     {
         // Arrange
-        var user = UserTestData.GenerateValidUser();
-        user.Password = UserTestData.GenerateInvalidPassword();
+        var user = UserTestData.GenerateUserWith(password: UserTestData.GenerateInvalidPassword());
 
         // Act
         var result = _validator.TestValidate(user);
@@ -150,8 +146,7 @@ public class UserValidatorTests
     public void Given_InvalidPhone_When_Validated_Then_ShouldHaveError()
     {
         // Arrange
-        var user = UserTestData.GenerateValidUser();
-        user.Phone = UserTestData.GenerateInvalidPhone();
+        var user = UserTestData.GenerateUserWith(phone: UserTestData.GenerateInvalidPhone());
 
         // Act
         var result = _validator.TestValidate(user);
@@ -172,8 +167,7 @@ public class UserValidatorTests
     public void Given_UnknownStatus_When_Validated_Then_ShouldHaveError()
     {
         // Arrange
-        var user = UserTestData.GenerateValidUser();
-        user.Status = UserStatus.Unknown;
+        var user = UserTestData.GenerateUserWith(status: UserStatus.Unknown);
 
         // Act
         var result = _validator.TestValidate(user);
@@ -194,8 +188,7 @@ public class UserValidatorTests
     public void Given_NoneRole_When_Validated_Then_ShouldHaveError()
     {
         // Arrange
-        var user = UserTestData.GenerateValidUser();
-        user.Role = UserRole.None;
+        var user = UserTestData.GenerateUserWith(role: UserRole.None);
 
         // Act
         var result = _validator.TestValidate(user);

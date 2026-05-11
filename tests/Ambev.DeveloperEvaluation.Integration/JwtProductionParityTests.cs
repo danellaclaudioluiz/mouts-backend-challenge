@@ -120,14 +120,11 @@ public class JwtProductionParityTests
     {
         using var scope = _factory.Services.CreateScope();
         var generator = scope.ServiceProvider.GetRequiredService<IJwtTokenGenerator>();
-        var user = new User
-        {
-            Id = Guid.NewGuid(),
-            Username = "prod-parity",
-            Email = "prod@parity.test",
-            Role = UserRole.Customer,
-            Status = UserStatus.Active
-        };
+        var user = User.Create(
+            username: "prod-parity",
+            passwordHash: "test-hash",
+            email: "prod@parity.test",
+            phone: "+5511999998888");
 
         var rawToken = generator.GenerateToken(user);
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(rawToken);

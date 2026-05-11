@@ -1,6 +1,5 @@
-﻿using Ambev.DeveloperEvaluation.Common.Security;
+using Ambev.DeveloperEvaluation.Common.Security;
 using Ambev.DeveloperEvaluation.Domain.Entities;
-using Ambev.DeveloperEvaluation.Domain.Enums;
 using Ambev.DeveloperEvaluation.Domain.Exceptions;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
 using AutoMapper;
@@ -9,7 +8,9 @@ using MediatR;
 namespace Ambev.DeveloperEvaluation.Application.Users.CreateUser;
 
 /// <summary>
-/// Handler for processing CreateUserCommand requests
+/// Self-service signup handler. Routes through <see cref="User.Create"/>
+/// which hard-codes role=Customer + status=Active so a smuggled
+/// <c>role: "Admin"</c> on the request body cannot escalate privileges.
 /// </summary>
 public class CreateUserHandler : IRequestHandler<CreateUserCommand, CreateUserResult>
 {
@@ -17,12 +18,6 @@ public class CreateUserHandler : IRequestHandler<CreateUserCommand, CreateUserRe
     private readonly IMapper _mapper;
     private readonly IPasswordHasher _passwordHasher;
 
-    /// <summary>
-    /// Initializes a new instance of CreateUserHandler
-    /// </summary>
-    /// <param name="userRepository">The user repository</param>
-    /// <param name="mapper">The AutoMapper instance</param>
-    /// <param name="validator">The validator for CreateUserCommand</param>
     public CreateUserHandler(IUserRepository userRepository, IMapper mapper, IPasswordHasher passwordHasher)
     {
         _userRepository = userRepository;
@@ -30,12 +25,6 @@ public class CreateUserHandler : IRequestHandler<CreateUserCommand, CreateUserRe
         _passwordHasher = passwordHasher;
     }
 
-    /// <summary>
-    /// Handles the CreateUserCommand request
-    /// </summary>
-    /// <param name="command">The CreateUser command</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The created user details</returns>
     public async Task<CreateUserResult> Handle(CreateUserCommand command, CancellationToken cancellationToken)
     {
         // Cheap pre-check; the unique index on Users.Email is the source of
@@ -43,17 +32,15 @@ public class CreateUserHandler : IRequestHandler<CreateUserCommand, CreateUserRe
         if (await _userRepository.EmailExistsAsync(command.Email, cancellationToken))
             throw new ConflictException($"User with email {command.Email} already exists");
 
-        var user = _mapper.Map<User>(command);
-        // Hard-code safe defaults on the self-service create path. The DTO
-        // omits Role/Status so an attacker can no longer ship Role=Admin
-        // through the public POST; role changes go through a dedicated
-        // admin-only endpoint.
-        user.Role = UserRole.Customer;
-        user.Status = UserStatus.Active;
-        user.Password = _passwordHasher.HashPassword(command.Password);
+        // Build via the rich factory — no AutoMapper hop, no chance of a
+        // future profile leaking Role/Status into the entity.
+        var user = User.Create(
+            username: command.Username,
+            passwordHash: _passwordHasher.HashPassword(command.Password),
+            email: command.Email,
+            phone: command.Phone);
 
         var createdUser = await _userRepository.CreateAsync(user, cancellationToken);
-        var result = _mapper.Map<CreateUserResult>(createdUser);
-        return result;
+        return _mapper.Map<CreateUserResult>(createdUser);
     }
 }
