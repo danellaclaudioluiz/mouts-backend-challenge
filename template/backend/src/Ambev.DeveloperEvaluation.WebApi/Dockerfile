@@ -1,4 +1,4 @@
-#See https://aka.ms/customizecontainer to learn how to customize your debug container and how Visual Studio uses this Dockerfile to build your images for faster debugging.
+# See https://aka.ms/customizecontainer for the upstream template this is based on.
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 USER app
@@ -25,6 +25,22 @@ ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./Ambev.DeveloperEvaluation.WebApi.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
+# Install curl for HEALTHCHECK — small footprint, lets us hit /health/live
+# without taking a Kubernetes-only dependency. Apt cache cleaned to keep
+# the image lean.
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+USER app
 WORKDIR /app
 COPY --from=publish /app/publish .
+
+# Container-level liveness so orchestrators (docker compose, ECS, Nomad,
+# k8s without explicit probes) flip the container to unhealthy when the
+# app stops responding. /health/live is intentionally cheap — no DB hit —
+# so this can run every 10s without affecting latency.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \
+    CMD curl -fsS http://localhost:8080/health/live || exit 1
+
 ENTRYPOINT ["dotnet", "Ambev.DeveloperEvaluation.WebApi.dll"]

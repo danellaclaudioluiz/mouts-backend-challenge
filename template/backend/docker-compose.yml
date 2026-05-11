@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Secrets are read from a sibling .env file (which is gitignored) so the
 # git history never carries a real password. Local devs copy .env.example
 # to .env and fill in their own values; CI injects them via the runner.
@@ -23,6 +21,25 @@ services:
     volumes:
       - ${APPDATA}/Microsoft/UserSecrets:/home/app/.microsoft/usersecrets:ro
       - ${APPDATA}/ASP.NET/Https:/home/app/.aspnet/https:ro
+      # Writable mount for Serilog file sink (the rest of the FS is read-only).
+      - webapi_logs:/app/logs
+    # Wait for the DB to be reporting healthy — not just "started" — so
+    # the first request never lands on a still-initialising Postgres.
+    depends_on:
+      ambev.developerevaluation.database:
+        condition: service_healthy
+    # Container hardening: read-only root FS + drop every Linux capability
+    # the app doesn't actually need + no new privileges via setuid bins.
+    # The /app/logs volume above is the only writable path.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Docker healthcheck inherits from the Dockerfile HEALTHCHECK
+    # directive; override here only if you need a different cadence.
 
   ambev.developerevaluation.database:
     container_name: ambev_developer_evaluation_database
@@ -33,11 +50,31 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    # pg_isready checks the postmaster is accepting connections — pairs
+    # with depends_on: condition: service_healthy on the WebApi.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
     # No host port publication by default — DB is reachable only from the
     # WebApi container over the docker-compose network. Devs that want to
     # poke at it with psql can `docker compose exec` or temporarily add a
     # `ports: "127.0.0.1:5432:5432"` line to their local copy.
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      # postgres needs to drop privileges from root → postgres at start;
+      # the rest of the caps stay dropped.
+      - CHOWN
+      - DAC_READ_SEARCH
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
 
   ambev.developerevaluation.nosql:
     container_name: ambev_developer_evaluation_nosql
@@ -47,6 +84,12 @@ services:
         MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD is required}
     ports:
       - "27017"
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'db.runCommand({ ping: 1 }).ok' | mongosh --quiet --username $$MONGO_INITDB_ROOT_USERNAME --password $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   ambev.developerevaluation.cache:
     container_name: ambev_developer_evaluation_cache
@@ -54,3 +97,19 @@ services:
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     ports:
        - "6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a $$REDIS_PASSWORD ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  webapi_logs:

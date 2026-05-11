@@ -24,7 +24,7 @@ public class DeleteSaleEndpointTests : IAsyncLifetime
     public Task InitializeAsync() => _factory.ResetDatabaseAsync();
     public Task DisposeAsync() => Task.CompletedTask;
 
-    [Fact(DisplayName = "DELETE /api/v1/sales/{id} returns 200 + cascades to SaleItems")]
+    [Fact(DisplayName = "DELETE /api/v1/sales/{id} returns 204 + cascades to SaleItems")]
     public async Task DeleteSale_HappyPath_CascadesItems()
     {
         var create = await _client.PostAsJsonAsync("/api/v1/sales",
@@ -33,7 +33,10 @@ public class DeleteSaleEndpointTests : IAsyncLifetime
         var created = (await create.Content.ReadFromJsonAsync<EnvelopedSale>())!.Data;
 
         var delete = await _client.DeleteAsync($"/api/v1/sales/{created.Id}");
-        delete.StatusCode.Should().Be(HttpStatusCode.OK);
+        delete.StatusCode.Should().Be(HttpStatusCode.NoContent,
+            "DELETE is REST-idiomatic 204 — no body, no envelope");
+        (await delete.Content.ReadAsStringAsync()).Should().BeEmpty(
+            "204 NoContent must not carry a body");
 
         var get = await _client.GetAsync($"/api/v1/sales/{created.Id}");
         get.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -92,6 +95,6 @@ public class DeleteSaleEndpointTests : IAsyncLifetime
         delete.Headers.TryAddWithoutValidation("If-Match", currentEtag);
 
         var response = await _client.SendAsync(delete);
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 }

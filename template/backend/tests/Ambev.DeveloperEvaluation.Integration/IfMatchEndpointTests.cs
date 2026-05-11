@@ -75,8 +75,8 @@ public class IfMatchEndpointTests : IAsyncLifetime
 
         var response = await _client.SendAsync(delete);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK,
-            "If-Match: * must bypass the optimistic-concurrency check for DELETE just like for PUT");
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent,
+            "If-Match: * must bypass the optimistic-concurrency check for DELETE just like for PUT (DELETE returns 204 NoContent on success)");
     }
 
     [Fact(DisplayName = "PUT with If-Match: \"\" (empty quoted string) is treated as no precondition")]

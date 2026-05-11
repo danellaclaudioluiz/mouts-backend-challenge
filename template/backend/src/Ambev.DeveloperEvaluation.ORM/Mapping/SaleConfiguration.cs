@@ -11,6 +11,9 @@ public class SaleConfiguration : IEntityTypeConfiguration<Sale>
         builder.ToTable("Sales");
 
         builder.HasKey(s => s.Id);
+        // Aggregate assigns Id via Guid.NewGuid() in Sale.Create() —
+        // same rationale as SaleItem.Id (see SaleItemConfiguration).
+        builder.Property(s => s.Id).ValueGeneratedNever();
 
         builder.Property(s => s.SaleNumber).IsRequired().HasMaxLength(50);
         builder.HasIndex(s => s.SaleNumber).IsUnique();
@@ -51,12 +54,18 @@ public class SaleConfiguration : IEntityTypeConfiguration<Sale>
             .HasDatabaseName("IX_Sales_SaleDate_Cancelled")
             .HasFilter("\"IsCancelled\" = true");
 
-        // Optimistic concurrency via a bigint maintained by a Postgres
-        // BEFORE UPDATE trigger (see migration BigintRowVersionTrigger).
-        // EF treats the column as generated-on-add-or-update so it issues
-        // the WHERE RowVersion = @oldVersion clause but does not include
-        // it in the SET, and reads the new value back via RETURNING. xmin
+        // RowVersion is maintained by the BEFORE UPDATE trigger
+        // (ambev_sales_bump_rowversion). EF treats it as the concurrency
+        // token: it issues the WHERE RowVersion = @oldVersion clause but
+        // does NOT include the column in SET (the trigger owns the new
+        // value); the post-update value is read back via RETURNING. xmin
         // would have done the same job but is reset by VACUUM FREEZE.
+        //
+        // Note: this used to false-positive on full-replace PUTs because
+        // EF saw non-default Guid keys on freshly-constructed SaleItems
+        // and emitted UPDATEs (matching 0 rows) instead of INSERTs.
+        // The Id.ValueGeneratedNever() on SaleItemConfiguration fixed
+        // that — see commit history for the diagnosis.
         builder.Property(s => s.RowVersion)
             .HasColumnType("bigint")
             .HasDefaultValue(0L)

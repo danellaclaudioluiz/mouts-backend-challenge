@@ -29,6 +29,14 @@ public class SaleItemConfiguration : IEntityTypeConfiguration<SaleItem>
         });
 
         builder.HasKey(i => i.Id);
+        // The aggregate assigns Id via Guid.NewGuid() in the SaleItem
+        // constructor (DDD identity is the domain's job, not the DB's).
+        // Without ValueGeneratedNever, EF Core 8 sees the non-empty Id on
+        // a freshly-added child and assumes the entity already exists —
+        // every new item then comes out as an UPDATE WHERE Id=… (matching
+        // zero rows) instead of an INSERT, and PUT-replace flows fail
+        // with a spurious DbUpdateConcurrencyException.
+        builder.Property(i => i.Id).ValueGeneratedNever();
 
         builder.Property(i => i.SaleId).IsRequired();
         builder.Property(i => i.ProductId).IsRequired();

@@ -71,8 +71,37 @@ public class MissingScenarioTests : IAsyncLifetime
         await ProblemDetailsAsserter.AssertProblemAsync(response, HttpStatusCode.BadRequest);
     }
 
-    [Fact(Skip = "Known issue: PUT that INSERTs new SaleItem rows hits a spurious DbUpdateConcurrencyException — EF Core 8's RowVersion check on Sales appears to race with the BEFORE UPDATE trigger when SaveChanges interleaves SaleItem mutations with the Sale UPDATE. Same-product diff (UpdateSale_HappyPath) works; full-replace path is documented in README under 'Known issues' for a follow-up fix.")]
-    public Task UpdateSale_ReplacesAllItems_Skipped() => Task.CompletedTask;
+    [Fact(DisplayName = "PUT replaces all items with brand-new product ids (full-replace path)")]
+    public async Task UpdateSale_ReplacesAllItems()
+    {
+        var create = await _client.PostAsJsonAsync("/api/v1/sales",
+            PayloadBuilder.BuildCreate($"S-{Guid.NewGuid():N}"));
+        create.EnsureSuccessStatusCode();
+        var created = (await create.Content.ReadFromJsonAsync<EnvelopedSale>())!.Data;
+
+        var newProduct1 = Guid.NewGuid();
+        var newProduct2 = Guid.NewGuid();
+        var response = await _client.PutAsJsonAsync($"/api/v1/sales/{created.Id}", new
+        {
+            saleDate = DateTime.UtcNow,
+            customerId = created.CustomerId,
+            customerName = "Renamed",
+            branchId = created.BranchId,
+            branchName = "Branch",
+            items = new object[]
+            {
+                new { productId = newProduct1, productName = "Ale",  quantity = 2, unitPrice = 15m },
+                new { productId = newProduct2, productName = "Wine", quantity = 1, unitPrice = 30m }
+            }
+        });
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"PUT body: {body}");
+
+        var get = await _client.GetFromJsonAsync<EnvelopedSale>($"/api/v1/sales/{created.Id}");
+        get!.Data.Items.Should().HaveCount(2,
+            "the replace path must DELETE the original item and INSERT the two new ones");
+        get.Data.Items.Select(i => i.ProductId).Should().BeEquivalentTo(new[] { newProduct1, newProduct2 });
+    }
 
     [Fact(DisplayName = "GET /sales with _order=totalAmount desc, saleDate asc applies the tie-breaker")]
     public async Task List_MultiKeyOrdering_AppliesTieBreaker()

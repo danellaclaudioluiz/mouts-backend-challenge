@@ -297,7 +297,7 @@ api POST /api/v1/sales -H "$AUTH_H" -H 'Content-Type: application/json' -d "$DEL
 DELETE_ID=$(json_get "$(last_body)" "data.id")
 
 expect "DELETE /sales/{id} stale If-Match → 412" "$(api DELETE /api/v1/sales/$DELETE_ID -H "$AUTH_H" -H 'If-Match: "deadbeef"')" "412"
-expect "DELETE /sales/{id} → 200"                "$(api DELETE /api/v1/sales/$DELETE_ID -H "$AUTH_H")" "200"
+expect "DELETE /sales/{id} → 204 NoContent"      "$(api DELETE /api/v1/sales/$DELETE_ID -H "$AUTH_H")" "204"
 expect "GET /sales/{id} after delete → 404"      "$(api GET /api/v1/sales/$DELETE_ID -H "$AUTH_H")" "404"
 expect "DELETE /sales/{random-unknown} → 404"    "$(api DELETE /api/v1/sales/$UNKNOWN_ID2 -H "$AUTH_H")" "404"
 

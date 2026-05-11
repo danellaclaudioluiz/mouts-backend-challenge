@@ -133,7 +133,7 @@ public class SalesController : BaseController
     /// PUT does — a mismatched ETag returns 412.
     /// </summary>
     [HttpDelete("{id:guid}")]
-    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status412PreconditionFailed)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -141,8 +141,10 @@ public class SalesController : BaseController
     {
         var expectedRowVersion = ParseIfMatch(Request.Headers.IfMatch);
         await _mediator.Send(new DeleteSaleCommand(id, expectedRowVersion), cancellationToken);
-        // ApiResponse already carries success/message, no need to wrap again.
-        return ((ControllerBase)this).Ok(new ApiResponse { Success = true, Message = "Sale deleted successfully" });
+        // 204 No Content is the REST idiom for a successful delete — no
+        // body, no envelope. Switching from 200+envelope removed a layer
+        // of "Stripe-style ack" that clients didn't need anyway.
+        return NoContent();
     }
 
     /// <summary>Soft-cancels a sale (sets IsCancelled = true). Idempotent.</summary>
