@@ -55,7 +55,7 @@ between the controller and the repository.
   behaviour). It does not reference Domain.
 
 Project files: see the solution at
-[template/backend/Ambev.DeveloperEvaluation.sln](../Ambev.DeveloperEvaluation.sln).
+[Ambev.DeveloperEvaluation.sln](../Ambev.DeveloperEvaluation.sln).
 
 ---
 

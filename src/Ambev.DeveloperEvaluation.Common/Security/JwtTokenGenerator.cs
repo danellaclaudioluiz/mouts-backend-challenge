@@ -47,13 +47,31 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         {
            new Claim(ClaimTypes.NameIdentifier, user.Id),
            new Claim(ClaimTypes.Name, user.Username),
-           new Claim(ClaimTypes.Role, user.Role)
+           new Claim(ClaimTypes.Role, user.Role),
+           // jti = unique token id. Lets ops correlate a specific token
+           // in access logs without leaking the principal id, and gives
+           // a future jti-denylist a stable key to revoke against.
+           new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
+           new Claim(JwtRegisteredClaimNames.Iat,
+               DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(),
+               ClaimValueTypes.Integer64)
        };
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
             Expires = DateTime.UtcNow.AddHours(8),
+            // Issuer / Audience are mandatory in production (the
+            // validator throws on startup when they're unset outside
+            // Development / Test). Emitting them here too is the
+            // matching half of the pair — without these claims on the
+            // token, JwtBearerHandler.ValidateToken rejects the token
+            // with SecurityTokenInvalidIssuerException and the API
+            // returns 401 for every authenticated request. Empty-string
+            // fallback so test environments (where the validator does
+            // not require iss/aud) still get a parseable token.
+            Issuer = _configuration["Jwt:Issuer"] ?? string.Empty,
+            Audience = _configuration["Jwt:Audience"] ?? string.Empty,
             SigningCredentials = new SigningCredentials(
                 new SymmetricSecurityKey(key),
                 SecurityAlgorithms.HmacSha256Signature)

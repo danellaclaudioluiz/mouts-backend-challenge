@@ -342,17 +342,19 @@ Response: `200 OK`, fresh `ETag`, full body.
 | 409 | concurrent update raced this one |
 | 412 | `If-Match` doesn't match current row version |
 
-#### <a id="put-known-limitation"></a>Known limitation
+#### <a id="put-known-limitation"></a>Previously known limitation (resolved)
 
-A PUT that introduces **new** `productId`s (or replaces the whole
-items array) occasionally raises 409 from the BEFORE UPDATE trigger
-racing EF Core's RowVersion-based concurrency check inside the same
-transaction. Diff-style updates (qty/price changes against the same
-products) work correctly. Tracked as
-`MissingScenarioTests.UpdateSale_ReplacesAllItems_Skipped`. **Client
-workaround:** for "replace all" semantics, issue
-`PATCH /items/{itemId}/cancel` for every doomed item and `POST` a new
-sale.
+A PUT that introduced new `productId`s used to raise a spurious 409
+from EF Core's optimistic concurrency check. The real cause was EF
+Core 8's "is this entity new?" heuristic mis-classifying
+aggregate-assigned `Guid` keys (we set them via `Guid.NewGuid()` in
+the `Sale` / `SaleItem` constructors) — EF emitted
+`UPDATE WHERE Id=…` (matching zero rows) instead of `INSERT`. Fixed
+with `Property(s => s.Id).ValueGeneratedNever()` on both
+`SaleConfiguration` and `SaleItemConfiguration`; the
+`UpdateSale_ReplacesAllItems` integration test (no `[Skip]`) now
+covers the full-replace path end-to-end. No client workaround
+required.
 
 ### `DELETE /api/v1/sales/{id}` — Hard delete
 
@@ -365,9 +367,12 @@ If-Match: "1"
 Cascades to all `SaleItems`. Response:
 
 ```http
-HTTP/1.1 200 OK
-{ "success": true, "message": "Sale deleted successfully" }
+HTTP/1.1 204 No Content
 ```
+
+204 No Content is the REST-idiomatic success for a delete — no body,
+no envelope. Clients distinguish "deleted now" (204) from "already
+gone" (404).
 
 | Status | Trigger |
 |---|---|

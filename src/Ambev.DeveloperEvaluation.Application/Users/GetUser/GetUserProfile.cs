@@ -13,6 +13,12 @@ public class GetUserProfile : Profile
     /// </summary>
     public GetUserProfile()
     {
-        CreateMap<User, GetUserResult>();
+        // Name is the public-facing display label for a user; the
+        // entity stores it as Username. Without this MapFrom AutoMapper
+        // silently leaves Name as the empty default, so every
+        // GET /users/{id} response had "name": "" while the API
+        // contract advertised a real name.
+        CreateMap<User, GetUserResult>()
+            .ForMember(dest => dest.Name, opt => opt.MapFrom(src => src.Username));
     }
 }

@@ -1,7 +1,7 @@
 # Challenge brief
 
 Verbatim copy of the original DeveloperStore evaluation statement. The
-template under [template/backend/](../) ships with its
+template under [](../) ships with its
 own `spec/` folder (Overview, Tech Stack, Frameworks, Project Structure,
 General API conventions) — the link list below points to those.
 

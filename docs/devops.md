@@ -11,11 +11,10 @@ probes, OTLP-compatible telemetry.
 
 ## Local development
 
-The `template/backend/.env.example` file is the canonical list of
+The `.env.example` file is the canonical list of
 required secrets. Copy it once:
 
 ```bash
-cd template/backend
 cp .env.example .env       # gitignored
 # fill in real values; generate strong ones with:
 #   openssl rand -base64 24    # passwords
@@ -64,7 +63,7 @@ dotnet run --project src/Ambev.DeveloperEvaluation.WebApi
 
 ### Image build
 
-[`template/backend/Dockerfile`](../Dockerfile) is a
+[`Dockerfile`](../Dockerfile) is a
 standard ASP.NET multi-stage build, three stages:
 
 | Stage | Base | Purpose |
@@ -301,12 +300,12 @@ migrations at startup, wrap the call in a Postgres advisory lock — see
 
 ```bash
 # Format the whole solution
-dotnet format template/backend/Ambev.DeveloperEvaluation.sln
+dotnet format Ambev.DeveloperEvaluation.sln
 
 # Add a new EF Core migration
 dotnet ef migrations add <Name> \
-  --project template/backend/src/Ambev.DeveloperEvaluation.ORM \
-  --startup-project template/backend/src/Ambev.DeveloperEvaluation.WebApi
+  --project src/Ambev.DeveloperEvaluation.ORM \
+  --startup-project src/Ambev.DeveloperEvaluation.WebApi
 
 # Inspect outbox state
 docker compose exec ambev.developerevaluation.database psql -U $POSTGRES_USER -d $POSTGRES_DB \

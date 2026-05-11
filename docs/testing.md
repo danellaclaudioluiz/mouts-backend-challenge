@@ -23,7 +23,6 @@ where the real bug-finding happens for HTTP semantics.
 ## Running
 
 ```bash
-cd template/backend
 
 dotnet test                                                    # both suites
 dotnet test tests/Ambev.DeveloperEvaluation.Unit               # unit only
@@ -36,7 +35,7 @@ by the script if missing):
 ```bash
 ./coverage-report.sh    # macOS / Linux
 coverage-report.bat     # Windows
-# open template/backend/TestResults/CoverageReport/index.html
+# open TestResults/CoverageReport/index.html
 ```
 
 CI runs both suites on `ubuntu-latest` plus a Gitleaks scan — see
@@ -130,7 +129,7 @@ the wall-clock cost reasonable for ~50 cases.
 | Abuse vectors | [`AbuseEndpointTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/AbuseEndpointTests.cs) | Oversize payloads, malformed JSON, header injection attempts surface as 400 problem details — never 500 |
 | Health | [`HealthEndpointTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/HealthEndpointTests.cs) | `/health/live` returns Healthy; `/health/ready` includes the Postgres DB probe; `/health` returns the full report; stopping the testcontainer drops `/health/ready` to 503 |
 | Outbox lifecycle | [`OutboxLifecycleTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/OutboxLifecycleTests.cs) | The dispatcher claims, publishes, marks rows processed; dead-letter cap behaviour; LISTEN/NOTIFY wakeup |
-| Missing scenarios | [`MissingScenarioTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/MissingScenarioTests.cs) | Pinned `[Fact(Skip = "…")]` entries that document expected gaps so reviewers see them without diffing the suite |
+| Missing scenarios | [`MissingScenarioTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/MissingScenarioTests.cs) | Cancel-cancelled HTTP idempotency, PUT with empty items → 400, PUT replacing all items with brand-new productIds (full-replace path, previously skipped — now active), multi-key `_order` tie-breaker, combined filters AND-ed together |
 
 ### Authenticated by default
 
@@ -160,9 +159,10 @@ posture surfaces that class of regression instantly.
 - **JWT issuance against an external IdP.** Token signing is
   validated in-process (`MintBearerToken` uses the registered
   `IJwtTokenGenerator`).
-- **PUT replacing the whole items array.** Documented gap — see
-  [api.md → known limitation](api.md#put-known-limitation). Pinned as a
-  `[Fact(Skip = "…")]` so the gap is visible in the test output.
+- **PUT replacing the whole items array.** Previously a skipped gap;
+  resolved with `Property(s => s.Id).ValueGeneratedNever()` on both
+  `Sale` and `SaleItem`. Now covered by the active
+  `UpdateSale_ReplacesAllItems` integration test (no Skip).
 - **Distributed-cache failure injection.** The cache implementation is
   best-effort (logs + falls back to DB on failure). Code path is
   exercised via unit tests against an in-memory `IDistributedCache`.

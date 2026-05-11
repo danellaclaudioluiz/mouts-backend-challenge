@@ -251,9 +251,18 @@ public class OutboxDispatcherService : BackgroundService
     /// </summary>
     private Task DeliverAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
+        // Info → Debug for the full payload: once events carry PII
+        // (CustomerName, BranchName) or denormalised fields, an Info-level
+        // log lands in every observability backend with weeks of retention
+        // and the payload becomes a quiet PII leak. The Info line is the
+        // dispatch heartbeat (just type + id + timestamp); the body lands
+        // at Debug for local troubleshooting and stays out of prod logs.
         _logger.LogInformation(
-            "Domain event {EventType} ({MessageId}) occurred at {OccurredAt:o}: {Payload}",
-            message.EventType, message.Id, message.OccurredAt, message.Payload);
+            "Domain event {EventType} ({MessageId}) dispatched at {OccurredAt:o}",
+            message.EventType, message.Id, message.OccurredAt);
+        _logger.LogDebug(
+            "Domain event {EventType} ({MessageId}) payload: {Payload}",
+            message.EventType, message.Id, message.Payload);
         return Task.CompletedTask;
     }
 }

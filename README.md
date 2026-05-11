@@ -82,8 +82,11 @@ See [Project Structure](/docs/spec/project-structure.md)
 
 The Sales feature is the implementation of the use case described above —
 a complete CRUD with quantity-tier discount rules, soft-cancel semantics,
-and a transactional outbox dispatching domain events. All endpoints are
-public (no `[Authorize]`).
+and a transactional outbox dispatching domain events. Every endpoint
+requires an authenticated user by default
+(`AuthorizationFallbackPolicy = RequireAuthenticatedUser`); only
+`POST /api/v1/auth`, `POST /api/v1/users` (self-service signup) and
+the `/health/*` probes opt out via `[AllowAnonymous]`.
 
 ### Endpoints
 
@@ -307,23 +310,25 @@ The schema and connection setup are tuned for production-style load:
   unique index is still the source of truth — a concurrent insert that
   slips past returns 409 from the middleware.
 
-### Known issues (documented gaps)
+### Known limitations (documented gaps)
 
-- **PUT with new SaleItem rows occasionally raises 409 Concurrent
-  modification.** The same-product diff path (qty / price changes on
-  existing items) works correctly. A PUT that introduces new
-  `productId`s or replaces the entire items list hits a spurious
-  optimistic-concurrency exception inside `SaveChanges` — the BEFORE
-  UPDATE trigger that maintains `Sales.RowVersion` appears to race with
-  EF Core's RowVersion-based concurrency check when SaleItem mutations
-  interleave with the Sale UPDATE in the same transaction. Tracked as
-  `MissingScenarioTests.UpdateSale_ReplacesAllItems_Skipped`. Workaround
-  for clients: replace items via separate `PATCH /items/{itemId}/cancel`
-  + `POST /api/v1/sales` (new sale) calls.
 - **Outbox dispatcher publishes to a structured log only.** A real
   broker (Kafka / RabbitMQ / SNS) is out of scope for the challenge;
   the dispatcher's `DeliverAsync` ships a single, swappable seam an
   operator can replace with `IDomainEventBroker` for production.
+- **Previously known PUT-replace-items 409 (resolved).** An earlier
+  pass tracked a `MissingScenarioTests.UpdateSale_ReplacesAllItems_Skipped`
+  test because PUT requests that introduced new `productId`s
+  intermittently returned 409 from EF's optimistic-concurrency check.
+  The root cause turned out to be EF Core 8's new-entity detection
+  heuristic: aggregate-assigned `Guid` PKs (`Sale.Id`, `SaleItem.Id`
+  are set in the constructor via `Guid.NewGuid()`) were treated as
+  "entity already exists", so freshly-added child rows came out as
+  `UPDATE WHERE Id=…` (matching zero rows) instead of `INSERT`.
+  Fixed by `Property(s => s.Id).ValueGeneratedNever()` on both
+  `SaleConfiguration` and `SaleItemConfiguration`; the integration
+  test `UpdateSale_ReplacesAllItems` (no Skip) now covers the
+  full-replace path end-to-end.
 
 ### Known future work (not in scope for the challenge)
 

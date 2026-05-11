@@ -5,7 +5,7 @@ Each scenario starts with the **symptom** (what the alert / customer
 reports), then the **immediate mitigation**, then the **root-cause
 hunt** with the exact commands.
 
-> All commands assume `cwd = template/backend/`. Replace
+> All commands assume `cwd = `. Replace
 > `ambev_developer_evaluation_database` with the production container /
 > pod name where applicable.
 

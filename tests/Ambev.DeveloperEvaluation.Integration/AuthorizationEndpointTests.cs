@@ -33,12 +33,17 @@ public class AuthorizationEndpointTests : IAsyncLifetime
     [InlineData("GET", "/api/v1/sales")]
     [InlineData("POST", "/api/v1/sales")]
     [InlineData("GET", "/api/v1/sales/00000000-0000-0000-0000-000000000000")]
+    [InlineData("PUT", "/api/v1/sales/00000000-0000-0000-0000-000000000000")]
     [InlineData("DELETE", "/api/v1/sales/00000000-0000-0000-0000-000000000000")]
+    [InlineData("PATCH", "/api/v1/sales/00000000-0000-0000-0000-000000000000/cancel")]
+    [InlineData("PATCH", "/api/v1/sales/00000000-0000-0000-0000-000000000000/items/00000000-0000-0000-0000-000000000000/cancel")]
     public async Task Anonymous_OnProtectedRoute_Returns401(string method, string path)
     {
         var req = new HttpRequestMessage(new HttpMethod(method), path);
         if (method == "POST")
             req.Content = JsonContent.Create(PayloadBuilder.BuildCreate($"S-{Guid.NewGuid():N}"));
+        if (method == "PUT")
+            req.Content = JsonContent.Create(PayloadBuilder.BuildUpdate(Guid.NewGuid()));
 
         var response = await _anonymous.SendAsync(req);
 

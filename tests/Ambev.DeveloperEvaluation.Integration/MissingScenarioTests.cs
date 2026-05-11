@@ -68,7 +68,10 @@ public class MissingScenarioTests : IAsyncLifetime
             items = Array.Empty<object>()
         });
 
-        await ProblemDetailsAsserter.AssertProblemAsync(response, HttpStatusCode.BadRequest);
+        var problem = await ProblemDetailsAsserter.AssertProblemAsync(response, HttpStatusCode.BadRequest);
+        problem.GetProperty("errors").EnumerateObject()
+            .Should().Contain(p => p.Name.Contains("Items"),
+                "the validator must pin the failure to the Items field so clients can show a precise message");
     }
 
     [Fact(DisplayName = "PUT replaces all items with brand-new product ids (full-replace path)")]

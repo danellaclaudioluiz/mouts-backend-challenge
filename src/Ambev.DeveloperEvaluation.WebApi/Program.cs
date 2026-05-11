@@ -36,6 +36,16 @@ public class Program
             WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
             builder.AddDefaultLogging();
 
+            // Cap request bodies at 1 MB. A POST /sales JSON with the
+            // MaxItemsPerSale cap (100 items × ~200-byte names) tops out
+            // around 40 KB — 1 MB gives ~25× headroom and refuses
+            // anything beyond before Kestrel starts spilling to disk.
+            // Default Kestrel is 30 MB which is a slow-DoS vector when
+            // paired with the Idempotency-Key middleware (every accepted
+            // request warms the cache for 24h).
+            builder.WebHost.ConfigureKestrel(o =>
+                o.Limits.MaxRequestBodySize = 1024L * 1024L);
+
             // Default MVC JSON encoder is permissive: a stored
             // CustomerName like "<script>" round-trips on the wire as raw
             // <script>. JSON-only consumers can render safely with their
