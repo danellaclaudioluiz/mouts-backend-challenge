@@ -53,5 +53,13 @@ public readonly record struct Money
 
     public static Money operator *(Money m, Quantity q) => m * q.Value;
 
+    /// <summary>
+    /// Safe widening: a <see cref="Money"/> always fits in a <see cref="decimal"/>
+    /// (the wrapped Amount). The reverse direction stays explicit via
+    /// <see cref="From"/> because constructing Money from an arbitrary
+    /// decimal must run the non-negative + 2-dp normalization checks.
+    /// </summary>
+    public static implicit operator decimal(Money m) => m.Amount;
+
     public override string ToString() => Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
 }

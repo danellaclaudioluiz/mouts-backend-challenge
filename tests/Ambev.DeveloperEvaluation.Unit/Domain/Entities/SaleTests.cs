@@ -85,11 +85,11 @@ public class SaleTests
         sale.AddItem(Guid.NewGuid(), "A", 2, 10m);
         var second = sale.AddItem(Guid.NewGuid(), "B", 2, 30m);
 
-        sale.TotalAmount.Should().Be(80m);
+        sale.TotalAmount.Amount.Should().Be(80m);
 
         sale.CancelItem(second.Id);
 
-        sale.TotalAmount.Should().Be(20m);
+        sale.TotalAmount.Amount.Should().Be(20m);
         sale.DomainEvents.OfType<ItemCancelledEvent>().Should().ContainSingle();
     }
 
@@ -131,7 +131,7 @@ public class SaleTests
         sale.Cancel();
 
         sale.IsCancelled.Should().BeTrue();
-        sale.TotalAmount.Should().Be(0m);
+        sale.TotalAmount.Amount.Should().Be(0m);
         sale.DomainEvents.OfType<SaleCancelledEvent>().Should().ContainSingle();
     }
 
@@ -145,7 +145,7 @@ public class SaleTests
         sale.Cancel();
 
         sale.Items.Should().OnlyContain(i => i.IsCancelled);
-        sale.TotalAmount.Should().Be(0m,
+        sale.TotalAmount.Amount.Should().Be(0m,
             "all items are cancelled so the rollup must be zero");
     }
 

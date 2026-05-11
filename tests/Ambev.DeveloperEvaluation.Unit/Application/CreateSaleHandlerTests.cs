@@ -86,8 +86,12 @@ public class CreateSaleHandlerTests
 
         var act = () => _handler.Handle(command, CancellationToken.None);
 
+        // Domain.ValueObjects.Quantity.From is the first guard that
+        // rejects qty > 20 — its message is the canonical aggregate-side
+        // wording. The MaxItemsPerSale policy constant still backs the
+        // pipeline-level validator that runs in production.
         await act.Should().ThrowAsync<DomainException>()
-            .WithMessage("*more than 20 identical items*");
+            .WithMessage("*cannot exceed*");
     }
 
     [Fact(DisplayName = "DomainEvents are cleared after publication")]

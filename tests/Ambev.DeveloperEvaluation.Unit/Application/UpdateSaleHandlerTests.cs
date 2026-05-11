@@ -86,7 +86,7 @@ public class UpdateSaleHandlerTests
 
         sale.Items.Should().HaveCount(1);
         sale.Items.Single().Id.Should().Be(existingItemId);
-        sale.Items.Single().Quantity.Should().Be(5);
+        sale.Items.Single().Quantity.Value.Should().Be(5);
     }
 
     [Fact(DisplayName = "Items missing from the payload are removed")]

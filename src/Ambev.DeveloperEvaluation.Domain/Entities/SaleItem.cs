@@ -1,6 +1,7 @@
 using Ambev.DeveloperEvaluation.Domain.Common;
 using Ambev.DeveloperEvaluation.Domain.Exceptions;
 using Ambev.DeveloperEvaluation.Domain.Services;
+using Ambev.DeveloperEvaluation.Domain.ValueObjects;
 
 namespace Ambev.DeveloperEvaluation.Domain.Entities;
 
@@ -10,19 +11,22 @@ namespace Ambev.DeveloperEvaluation.Domain.Entities;
 /// which is why state-changing members are <c>internal</c>.
 /// </summary>
 /// <remarks>
-/// Discount and TotalAmount are stored, not computed, so we can filter and
-/// order on them in SQL. They are recomputed every time the quantity or unit
-/// price changes via <see cref="SaleItemDiscountPolicy"/>.
+/// Quantity / UnitPrice / Discount / TotalAmount are value-objects:
+/// <see cref="ValueObjects.Quantity"/> + <see cref="ValueObjects.Money"/>.
+/// Construction routes through their validating factories so a bad value
+/// can't sit in memory waiting for the validator to catch it later — the
+/// type itself refuses it. EF Core sees the underlying decimal/int via
+/// value converters configured on <see cref="SaleItem"/>'s mapping.
 /// </remarks>
 public class SaleItem : BaseEntity
 {
     public Guid SaleId { get; internal set; }
     public Guid ProductId { get; private set; }
     public string ProductName { get; private set; } = string.Empty;
-    public int Quantity { get; private set; }
-    public decimal UnitPrice { get; private set; }
-    public decimal Discount { get; private set; }
-    public decimal TotalAmount { get; private set; }
+    public Quantity Quantity { get; private set; }
+    public Money UnitPrice { get; private set; }
+    public Money Discount { get; private set; }
+    public Money TotalAmount { get; private set; }
     public bool IsCancelled { get; private set; }
 
     /// <summary>
@@ -39,23 +43,27 @@ public class SaleItem : BaseEntity
             throw new DomainException("Sale item product id is required.");
         if (string.IsNullOrWhiteSpace(productName))
             throw new DomainException("Sale item product name is required.");
+        if (unitPrice <= 0m)
+            throw new DomainException("Sale item unit price must be greater than zero.");
 
         Id = Guid.NewGuid();
         ProductId = productId;
         ProductName = productName;
-        UnitPrice = unitPrice;
+        UnitPrice = Money.From(unitPrice);
         ChangeQuantity(quantity);
     }
 
     internal void ChangeQuantity(int quantity)
     {
-        Quantity = quantity;
+        Quantity = Quantity.From(quantity);
         Recalculate();
     }
 
     internal void ChangeUnitPrice(decimal unitPrice)
     {
-        UnitPrice = unitPrice;
+        if (unitPrice <= 0m)
+            throw new DomainException("Sale item unit price must be greater than zero.");
+        UnitPrice = Money.From(unitPrice);
         Recalculate();
     }
 
@@ -63,9 +71,11 @@ public class SaleItem : BaseEntity
     {
         if (string.IsNullOrWhiteSpace(productName))
             throw new DomainException("Sale item product name is required.");
+        if (unitPrice <= 0m)
+            throw new DomainException("Sale item unit price must be greater than zero.");
 
         ProductName = productName;
-        UnitPrice = unitPrice;
+        UnitPrice = Money.From(unitPrice);
         ChangeQuantity(quantity);
     }
 
@@ -76,6 +86,8 @@ public class SaleItem : BaseEntity
 
     private void Recalculate()
     {
+        // VO-typed overload: invariants (qty range, money non-negative)
+        // are already enforced by Quantity/Money themselves at this point.
         var (discount, total) = SaleItemDiscountPolicy.Calculate(Quantity, UnitPrice);
         Discount = discount;
         TotalAmount = total;

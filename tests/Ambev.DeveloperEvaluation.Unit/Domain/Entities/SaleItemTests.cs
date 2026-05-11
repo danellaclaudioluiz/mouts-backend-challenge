@@ -26,8 +26,8 @@ public class SaleItemTests
 
         var item = sale.AddItem(Guid.NewGuid(), "P", quantity, unitPrice);
 
-        item.Discount.Should().Be(expectedDiscount);
-        item.TotalAmount.Should().Be(expectedTotal);
+        item.Discount.Amount.Should().Be(expectedDiscount);
+        item.TotalAmount.Amount.Should().Be(expectedTotal);
     }
 
     [Fact(DisplayName = "Item is owned by the sale that created it")]

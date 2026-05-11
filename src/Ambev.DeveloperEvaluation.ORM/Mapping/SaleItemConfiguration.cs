@@ -1,7 +1,9 @@
 using Ambev.DeveloperEvaluation.Domain.Entities;
 using Ambev.DeveloperEvaluation.Domain.Services;
+using Ambev.DeveloperEvaluation.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using DomainQuantity = Ambev.DeveloperEvaluation.Domain.ValueObjects.Quantity;
 
 namespace Ambev.DeveloperEvaluation.ORM.Mapping;
 
@@ -42,10 +44,24 @@ public class SaleItemConfiguration : IEntityTypeConfiguration<SaleItem>
         builder.Property(i => i.ProductId).IsRequired();
         builder.Property(i => i.ProductName).IsRequired().HasMaxLength(200);
 
-        builder.Property(i => i.Quantity).IsRequired();
-        builder.Property(i => i.UnitPrice).HasPrecision(18, 2);
-        builder.Property(i => i.Discount).HasPrecision(18, 2);
-        builder.Property(i => i.TotalAmount).HasPrecision(18, 2);
+        // VO ↔ primitive converters keep the storage shape (integer /
+        // numeric(18,2)) and the CK_ constraints below identical to the
+        // pre-VO migration, while in-memory the aggregate works in
+        // domain types. The factories validate on materialisation — a
+        // backfill / raw SQL that wrote an out-of-range row would fail
+        // load too, not just write.
+        builder.Property(i => i.Quantity)
+            .HasConversion(v => v.Value, v => DomainQuantity.From(v))
+            .IsRequired();
+        builder.Property(i => i.UnitPrice)
+            .HasConversion(v => v.Amount, v => Money.From(v))
+            .HasPrecision(18, 2);
+        builder.Property(i => i.Discount)
+            .HasConversion(v => v.Amount, v => Money.From(v))
+            .HasPrecision(18, 2);
+        builder.Property(i => i.TotalAmount)
+            .HasConversion(v => v.Amount, v => Money.From(v))
+            .HasPrecision(18, 2);
         builder.Property(i => i.IsCancelled).IsRequired();
 
         // Unique partial index encoding the aggregate's invariant:

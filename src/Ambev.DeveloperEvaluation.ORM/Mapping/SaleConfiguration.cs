@@ -1,4 +1,5 @@
 using Ambev.DeveloperEvaluation.Domain.Entities;
+using Ambev.DeveloperEvaluation.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -26,7 +27,12 @@ public class SaleConfiguration : IEntityTypeConfiguration<Sale>
         builder.Property(s => s.BranchId).IsRequired();
         builder.Property(s => s.BranchName).IsRequired().HasMaxLength(200);
 
-        builder.Property(s => s.TotalAmount).HasPrecision(18, 2);
+        // Money is the in-memory type; the column stays numeric(18,2). The
+        // converter normalises on materialisation (Money.From rounds to 2 dp
+        // AwayFromZero), so any value DB and code agree on a single shape.
+        builder.Property(s => s.TotalAmount)
+            .HasConversion(v => v.Amount, v => Money.From(v))
+            .HasPrecision(18, 2);
         builder.Property(s => s.IsCancelled).IsRequired();
         builder.Property(s => s.CreatedAt)
             .IsRequired()

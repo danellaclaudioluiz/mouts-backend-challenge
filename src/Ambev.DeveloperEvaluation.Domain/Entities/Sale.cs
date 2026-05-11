@@ -1,6 +1,7 @@
 using Ambev.DeveloperEvaluation.Domain.Common;
 using Ambev.DeveloperEvaluation.Domain.Events;
 using Ambev.DeveloperEvaluation.Domain.Exceptions;
+using Ambev.DeveloperEvaluation.Domain.ValueObjects;
 
 namespace Ambev.DeveloperEvaluation.Domain.Entities;
 
@@ -24,7 +25,7 @@ public class Sale : BaseEntity
     public string CustomerName { get; private set; } = string.Empty;
     public Guid BranchId { get; private set; }
     public string BranchName { get; private set; } = string.Empty;
-    public decimal TotalAmount { get; private set; }
+    public Money TotalAmount { get; private set; } = Money.Zero;
     public bool IsCancelled { get; private set; }
 
     /// <summary>
@@ -94,7 +95,7 @@ public class Sale : BaseEntity
             BranchName = branchName,
             CreatedAt = DateTime.UtcNow,
             IsCancelled = false,
-            TotalAmount = 0m
+            TotalAmount = Money.Zero
         };
 
         return sale;
@@ -292,7 +293,10 @@ public class Sale : BaseEntity
     private void Recalculate()
     {
         var activeItems = _items.Where(i => !i.IsCancelled).ToArray();
-        TotalAmount = activeItems.Sum(i => i.TotalAmount);
+        // LINQ.Sum has no Money overload — fold via the VO's + operator so
+        // every intermediate sum stays normalized at 2 dp instead of
+        // accumulating raw decimals and rounding only at the end.
+        TotalAmount = activeItems.Aggregate(Money.Zero, (acc, i) => acc + i.TotalAmount);
         ActiveItemsCount = activeItems.Length;
     }
 
