@@ -229,9 +229,12 @@ Security-relevant properties beyond the safety story documented in
   [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
 
 If a secret reaches the remote git history, **rotate** the secret and
-**purge** the history (`git filter-repo`). The post-audit operational
-condition tracked: confirm the early-development password
-`REDACTED` was never pushed to a shared remote.
+**purge** the history (`git filter-repo --replace-text`). The
+early-development Postgres password that originally shipped with the
+template was scrubbed via `git filter-repo` and the rewritten history
+force-pushed; running `git log --all -S '<the-old-string>'` should now
+return nothing. The full procedure is documented in
+[`runbook.md` § 3](runbook.md#3-jwt-secret-leaked--rotated).
 
 ---
 
@@ -287,8 +290,10 @@ Tracked separately in the project log:
 
 - 2026-05-10 — second pass, **score 87/100, APPROVED for production**
   conditional on:
-  1. Confirming the early-development password `REDACTED` was never
-     pushed to a shared remote.
+  1. Purging the early-development Postgres password from the git
+     history with `git filter-repo --replace-text` and rotating the
+     credential. **Done** — `git log --all -S '<the-old-string>'`
+     returns no matches on the rewritten branches.
   2. Documenting the JWT-rotation runbook entry (now in this file).
 - Critical issues from the first pass (C1/C2/C3) all addressed:
   authorization fallback policy, mass-assignment fix, secrets fully
