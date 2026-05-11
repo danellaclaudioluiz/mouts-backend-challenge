@@ -1,16 +1,21 @@
 # Developer Evaluation Project
 
-> 🌐 **Live demo**: <https://mouts.danellaclaudioluiz.com.br>
-> · **Swagger UI**: <https://mouts.danellaclaudioluiz.com.br/swagger>
-> · `GET /health` · `GET /health/ready`
-> · `POST /api/v1/users` (anonymous signup)
-> → `POST /api/v1/auth` (returns `token` + `refreshToken`)
-> → click **Authorize** in Swagger and paste `Bearer <token>` →
-> hit `POST /api/v1/sales`.
-> Hosted on a Hostinger VPS behind nginx + Let's Encrypt — TLS valid,
-> HSTS preload-ready, JWT with `iss=https://mouts.danellaclaudioluiz.com.br`
-> + `aud=mouts-sales-api`, auth-strict rate limit 5/min/IP. Deployment
-> runbook in [docs/deployment.md](docs/deployment.md).
+## 🌐 Live demo
+
+- **API**: <https://mouts.danellaclaudioluiz.com.br>
+- **Swagger UI**: <https://mouts.danellaclaudioluiz.com.br/swagger>
+- **Health**: <https://mouts.danellaclaudioluiz.com.br/health>
+
+### Try it in 4 steps
+
+1. `POST /api/v1/users` — anonymous signup (role is hard-coded to `Customer` server-side).
+2. `POST /api/v1/auth` — returns `token` (8 h JWT) + `refreshToken` (one-shot rotation).
+3. Click **Authorize** in Swagger UI and paste the raw JWT (no `Bearer` prefix).
+4. Exercise `POST /api/v1/sales` and the rest.
+
+Hosted on a Hostinger VPS behind nginx + Let's Encrypt. TLS valid, HSTS preload-ready, JWT carries `iss=https://mouts.danellaclaudioluiz.com.br` + `aud=mouts-sales-api`, auth-strict rate limit is 5 req/min/IP. Deployment runbook lives at [docs/deployment.md](docs/deployment.md).
+
+---
 
 `READ CAREFULLY`
 
