@@ -3,6 +3,18 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!--
+      NU1903 (AutoMapper 13.0.1, GHSA-rvv3-g6hj-g44x): the patched
+      AutoMapper line is 16.1.1+, which transitively requires
+      Microsoft.Extensions.Logging.Abstractions >= 10.0.0 — a .NET 10
+      preview library that mismatches our net8.0 LTS target and
+      regresses WebApplicationFactory<Program> host startup
+      (JwtProductionParityTests breaks). Dependabot watches AutoMapper
+      and the Microsoft.Extensions.* group; the bump will reopen once
+      a fix lands compatible with .NET 8 or we move the project to
+      .NET 9+. Suppressing here is the documented trade-off.
+    -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

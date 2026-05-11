@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Ambev.DeveloperEvaluation.ORM;
-using FluentAssertions;
 using Ambev.DeveloperEvaluation.ORM.Outbox;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;

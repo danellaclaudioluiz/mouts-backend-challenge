@@ -155,10 +155,17 @@ public class SaleTests
         var sale = BuildSale();
         sale.AddItem(Guid.NewGuid(), "A", 4, 10m);
 
+        // This test exists specifically to pin the deprecated two-step
+        // (Create + AddItem + MarkCreated) construction path that legacy
+        // callers still rely on — silence the obsolete warning here only.
+#pragma warning disable CS0618 // Type or member is obsolete
         sale.MarkCreated();
+#pragma warning restore CS0618
 
         var created = sale.DomainEvents.OfType<SaleCreatedEvent>().Should().ContainSingle().Subject;
-        created.TotalAmount.Should().Be(sale.TotalAmount);
+        // SaleCreatedEvent.TotalAmount is decimal (wire-format); sale.TotalAmount is
+        // a Money VO. Compare on the primitive both sides agree on.
+        created.TotalAmount.Should().Be(sale.TotalAmount.Amount);
         created.ItemCount.Should().Be(1);
     }
 }

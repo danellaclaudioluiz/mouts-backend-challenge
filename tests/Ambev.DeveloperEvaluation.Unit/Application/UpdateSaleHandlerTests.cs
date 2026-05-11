@@ -110,7 +110,7 @@ public class UpdateSaleHandlerTests
             BranchName = sale.BranchName,
             Items = new List<CreateSaleItemDto>
             {
-                new() { ProductId = keep.ProductId, ProductName = keep.ProductName, Quantity = keep.Quantity, UnitPrice = keep.UnitPrice }
+                new() { ProductId = keep.ProductId, ProductName = keep.ProductName, Quantity = keep.Quantity.Value, UnitPrice = keep.UnitPrice.Amount }
             }
         }, CancellationToken.None);
 
@@ -170,7 +170,7 @@ public class UpdateSaleHandlerTests
                 && ((SaleModifiedEvent)e).SaleId == sale.Id
                 && ((SaleModifiedEvent)e).SaleNumber == sale.SaleNumber
                 && ((SaleModifiedEvent)e).ItemCount == 1
-                && ((SaleModifiedEvent)e).TotalAmount == sale.TotalAmount),
+                && ((SaleModifiedEvent)e).TotalAmount == sale.TotalAmount.Amount),
             Arg.Any<CancellationToken>());
         sale.DomainEvents.Should().BeEmpty();
     }

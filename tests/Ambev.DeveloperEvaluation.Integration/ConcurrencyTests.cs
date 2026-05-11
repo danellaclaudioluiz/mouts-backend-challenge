@@ -59,7 +59,7 @@ public class ConcurrencyTests : IAsyncLifetime
         var ctx = scope.ServiceProvider.GetRequiredService<DefaultContext>();
         var item = await ctx.SaleItems.AsNoTracking()
             .SingleAsync(i => i.SaleId == created.Id);
-        item.Quantity.Should().Be(6);
+        item.Quantity.Value.Should().Be(6);
     }
 
     [Fact(DisplayName = "Two POSTs with the same Idempotency-Key — at most one sale persists")]
@@ -157,7 +157,7 @@ public class ConcurrencyTests : IAsyncLifetime
         {
             // PUT won — exactly one item with the new quantity.
             item.Should().NotBeNull("PUT won so the items must still be there");
-            item!.Quantity.Should().Be(8);
+            item!.Quantity.Value.Should().Be(8);
         }
     }
 }
