@@ -1,0 +1,111 @@
+using Microsoft.OpenApi.Models;
+using Swashbuckle.AspNetCore.SwaggerGen;
+
+namespace Ambev.DeveloperEvaluation.WebApi.Swagger;
+
+/// <summary>
+/// Forces a deterministic, reading-friendly order in the Swagger UI:
+///
+/// <list type="bullet">
+///   <item><b>Tag groups</b>: Auth → Users → Sales (natural onboarding
+///         flow). Without this Swashbuckle falls back to insertion or
+///         alphabetical order and Auth ends up sandwiched between
+///         Sales and Users.</item>
+///   <item><b>HTTP verbs within each tag</b>: POST → GET → PUT → PATCH
+///         → DELETE (write-then-read-then-mutate-then-delete). Swagger
+///         UI's default is the dictionary key order of
+///         <c>OpenApiPathItem.Operations</c>, which Swashbuckle fills
+///         in the order ASP.NET discovered the actions —
+///         alphabetical-by-method-name for the most part, so DELETE
+///         appears above GET above POST. Confusing for a reader who
+///         expects "first create, then read, then change".</item>
+/// </list>
+/// </summary>
+/// <remarks>
+/// <see cref="SwaggerGenOptions.OrderActionsBy"/> only affects the order
+/// inside <c>ApiDescriptions</c>; the Swagger UI then groups by tag and
+/// reads <see cref="OpenApiPaths"/> + <see cref="OpenApiPathItem.Operations"/>
+/// dictionary iteration order. The only reliable knob is a
+/// <see cref="IDocumentFilter"/> that rewrites both after Swashbuckle
+/// has materialised the doc.
+/// </remarks>
+public sealed class SwaggerOrderingFilter : IDocumentFilter
+{
+    private static readonly string[] TagOrder = { "Auth", "Users", "Sales" };
+
+    private static readonly OperationType[] MethodOrder =
+    {
+        OperationType.Post,
+        OperationType.Get,
+        OperationType.Put,
+        OperationType.Patch,
+        OperationType.Delete
+    };
+
+    public void Apply(OpenApiDocument doc, DocumentFilterContext context)
+    {
+        ReorderTags(doc);
+        ReorderPathsAndOperations(doc);
+    }
+
+    private static int TagIndex(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return int.MaxValue;
+        var idx = Array.IndexOf(TagOrder, name);
+        return idx < 0 ? int.MaxValue : idx;
+    }
+
+    private static int MethodIndex(OperationType method)
+    {
+        var idx = Array.IndexOf(MethodOrder, method);
+        return idx < 0 ? int.MaxValue : idx;
+    }
+
+    private static void ReorderTags(OpenApiDocument doc)
+    {
+        if (doc.Tags is null || doc.Tags.Count == 0) return;
+        doc.Tags = doc.Tags
+            .OrderBy(t => TagIndex(t.Name))
+            .ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static void ReorderPathsAndOperations(OpenApiDocument doc)
+    {
+        if (doc.Paths is null || doc.Paths.Count == 0) return;
+
+        // Sort paths by the tag of their first operation, then alphabetically.
+        var orderedKeys = doc.Paths
+            .OrderBy(p => TagIndex(PrimaryTag(p.Value)))
+            .ThenBy(p => p.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(p => p.Key)
+            .ToList();
+
+        var rebuilt = new OpenApiPaths();
+        foreach (var key in orderedKeys)
+        {
+            var pathItem = doc.Paths[key];
+            pathItem.Operations = ReorderOperations(pathItem.Operations);
+            rebuilt[key] = pathItem;
+        }
+        doc.Paths = rebuilt;
+    }
+
+    private static string? PrimaryTag(OpenApiPathItem pathItem)
+    {
+        return pathItem.Operations.Values
+            .SelectMany(op => op.Tags ?? Enumerable.Empty<OpenApiTag>())
+            .Select(t => t.Name)
+            .FirstOrDefault();
+    }
+
+    private static IDictionary<OperationType, OpenApiOperation> ReorderOperations(
+        IDictionary<OperationType, OpenApiOperation> ops)
+    {
+        if (ops.Count <= 1) return ops;
+        var rebuilt = new Dictionary<OperationType, OpenApiOperation>();
+        foreach (var pair in ops.OrderBy(o => MethodIndex(o.Key)))
+            rebuilt[pair.Key] = pair.Value;
+        return rebuilt;
+    }
+}

@@ -274,16 +274,11 @@ public class Program
                     return string.IsNullOrWhiteSpace(action) ? controller : $"{controller}_{action}";
                 });
 
-                // Tag order: Auth → Users → Sales mirrors the natural
-                // onboarding flow (sign up → log in → use the API).
-                // Without this Swashbuckle alphabetises (Auth, Sales, Users).
-                var tagOrder = new[] { "Auth", "Users", "Sales" };
-                c.OrderActionsBy(api =>
-                {
-                    var ctrl = api.ActionDescriptor.RouteValues["controller"] ?? "";
-                    var idx = Array.IndexOf(tagOrder, ctrl);
-                    return $"{(idx == -1 ? 9 : idx)}_{ctrl}_{api.HttpMethod}_{api.RelativePath}";
-                });
+                // Tag groups (Auth → Users → Sales) AND HTTP-verb order
+                // within each tag (POST → GET → PUT → PATCH → DELETE) are
+                // handled by a DocumentFilter — see SwaggerOrderingFilter
+                // for why OrderActionsBy alone doesn't move the Swagger
+                // UI's grouping pass.
 
                 // Wire the XML doc file emitted by GenerateDocumentationFile.
                 var xmlPath = Path.Combine(AppContext.BaseDirectory,
@@ -316,6 +311,7 @@ public class Program
 
                 c.OperationFilter<Swagger.HeaderOperationFilter>();
                 c.SchemaFilter<Swagger.SwaggerExampleFilter>();
+                c.DocumentFilter<Swagger.SwaggerOrderingFilter>();
             });
 
             var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");

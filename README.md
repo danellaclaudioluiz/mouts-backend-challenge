@@ -115,7 +115,7 @@ sequenceDiagram
     participant DSP as OutboxDispatcherService
     participant Brk as Broker / log sink
 
-    C->>API: POST /api/v1/sales<br/>(Bearer, Idempotency-Key)
+    C->>API: POST /api/v1/sales (Bearer + Idempotency-Key)
     API->>IM: pass through
     IM->>IM: SHA-256(body) → cache lookup
     alt cached 2xx response
@@ -123,7 +123,7 @@ sequenceDiagram
     else fresh request
         IM->>H: dispatch via MediatR
         H->>Sale: Sale.Create(header, items)
-        Note over Sale: validate invariants;<br/>raise SaleCreatedEvent
+        Note over Sale: validate invariants + raise SaleCreatedEvent
         H->>Pub: PublishAsync(SaleCreatedEvent)
         Pub->>DB: stage OutboxMessage on context
         H->>DB: SaveChanges (sale + outbox in one tx)
@@ -134,8 +134,8 @@ sequenceDiagram
         IM->>IM: cache body for 24h
         IM-->>C: 201
         DB->>DSP: NOTIFY wakes LISTEN connection
-        DSP->>DB: SELECT FOR UPDATE SKIP LOCKED;<br/>set LockedUntil
-        DSP->>Brk: DeliverAsync (envelope with eventId)<br/>(parallel across the batch)
+        DSP->>DB: SELECT FOR UPDATE SKIP LOCKED + set LockedUntil
+        DSP->>Brk: DeliverAsync (envelope with eventId, parallel across the batch)
         DSP->>DB: SET ProcessedAt = now()
     end
 ```
