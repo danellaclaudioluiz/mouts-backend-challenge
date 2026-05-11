@@ -1,18 +1,17 @@
 using AutoMapper;
+using Ambev.DeveloperEvaluation.Application.Users.GetUser;
 
 namespace Ambev.DeveloperEvaluation.WebApi.Features.Users.GetUser;
 
-/// <summary>
-/// Profile for mapping GetUser feature requests to commands
-/// </summary>
 public class GetUserProfile : Profile
 {
-    /// <summary>
-    /// Initializes the mappings for GetUser feature
-    /// </summary>
     public GetUserProfile()
     {
-        CreateMap<Guid, Application.Users.GetUser.GetUserCommand>()
-            .ConstructUsing(id => new Application.Users.GetUser.GetUserCommand(id));
+        CreateMap<Guid, GetUserCommand>()
+            .ConstructUsing(id => new GetUserCommand(id));
+        // Was missing — GetUser controller calls _mapper.Map<GetUserResponse>(result)
+        // and AutoMapper would throw AutoMapperMappingException without it,
+        // surfacing as a 500 for any GET /api/v1/users/{id} caller.
+        CreateMap<GetUserResult, GetUserResponse>();
     }
 }
