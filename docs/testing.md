@@ -22,8 +22,9 @@ where the real bug-finding happens for HTTP semantics.
 
 ## Running
 
-```bash
+From the repo root:
 
+```bash
 dotnet test                                                    # both suites
 dotnet test tests/Ambev.DeveloperEvaluation.Unit               # unit only
 dotnet test tests/Ambev.DeveloperEvaluation.Integration        # integration (needs docker)
@@ -33,13 +34,43 @@ Coverage HTML report (Coverlet + ReportGenerator, both auto-installed
 by the script if missing):
 
 ```bash
-./coverage-report.sh    # macOS / Linux
-coverage-report.bat     # Windows
+bash scripts/coverage-report.sh        # macOS / Linux / git-bash
+scripts/coverage-report.bat            # Windows cmd.exe
 # open TestResults/CoverageReport/index.html
 ```
 
-CI runs both suites on `ubuntu-latest` plus a Gitleaks scan — see
-[devops.md → CI](devops.md#continuous-integration).
+End-to-end smoke against a running API (15 sections, 96 curl
+assertions — auth wall, mass-assignment defence, idempotency replays,
+ETag/If-Match, outbox dispatch, XSS round-trip, rate limit):
+
+```bash
+bash scripts/smoke.sh                  # BASE=http://localhost:5119 by default
+```
+
+### Mutation testing — Stryker.NET
+
+Coverage tells you which lines ran; mutation testing tells you whether
+the tests would notice if those lines were wrong. Stryker mutates
+operators (`==` → `!=`, `+` → `-`, `>` → `>=`, etc.), runs the unit
+suite against each mutant, and reports the kill rate.
+
+Run locally:
+
+```bash
+dotnet tool install --global dotnet-stryker
+dotnet stryker --config-file stryker-config.json --reporter cleartext --reporter html
+open StrykerOutput/<timestamp>/reports/mutation-report.html
+```
+
+Scope is `Domain` + `Application` (mutations in ORM/WebApi are mostly
+no-ops for a portfolio-sized suite); thresholds `high 85 / low 70 /
+break 60` — see [`stryker-config.json`](../stryker-config.json) for
+the rationale. CI runs Stryker nightly + on `workflow_dispatch` so it
+doesn't block PR merges.
+
+CI runs all six jobs on `ubuntu-latest` — see
+[devops.md → CI](devops.md#continuous-integration) for the full job
+table.
 
 ---
 

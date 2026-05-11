@@ -348,9 +348,10 @@ The schema and connection setup are tuned for production-style load:
 ### Running locally
 
 ```bash
-
-
-# 1. start the database (host port 5432:5432 is exposed)
+# 1. start the database (port 5432 NOT published by default — the
+#    docker-compose.override.yml shipped in this repo binds it to
+#    127.0.0.1:5432 for local dev so the host's `dotnet ef` /
+#    `dotnet run` can reach it).
 docker compose up -d ambev.developerevaluation.database
 
 # 2. apply migrations
@@ -409,8 +410,20 @@ dotnet user-secrets set "Jwt:SecretKey" "..." \
 ### Running the tests
 
 ```bash
-
+# Unit + integration (integration needs Docker for Testcontainers Postgres):
 dotnet test
+
+# Or only one of them:
+dotnet test tests/Ambev.DeveloperEvaluation.Unit
+dotnet test tests/Ambev.DeveloperEvaluation.Integration
+```
+
+For an end-to-end smoke against a running API (15 sections, 96 curl
+assertions covering auth wall, mass-assignment defence, idempotency
+replays, ETag/If-Match, outbox dispatch, XSS round-trip, rate limit):
+
+```bash
+bash scripts/smoke.sh           # BASE=http://localhost:5119 by default
 ```
 
 - **Unit tests** (`tests/Ambev.DeveloperEvaluation.Unit`): >100 tests
@@ -438,8 +451,14 @@ dotnet test
 | List + pagination + filters | `ListSalesEndpointTests.cs` | Page/size paging, customer/branch/`isCancelled` filters, ordering, bad order key → 400, oversize page → 400, empty page is well-formed, keyset cursor mode, `_page` + `_cursor` together → 400 |
 | Boundaries | `BoundaryEndpointTests.cs` | Exactly `MaxItemsPerSale` (100) items accepted, 101 items → 400, duplicate `productId` across lines → 400 (cap cannot be split) |
 | Rate limit | `RateLimitEndpointTests.cs` | Dedicated factory with `RateLimit:PermitLimit=5`: bursts of requests beyond the permit return 429 |
-| Health | `HealthEndpointTests.cs` | `/health/live` returns Healthy, `/health/ready` includes the Postgres DB probe, `/health` returns the full report |
-| Outbox side-effects | `Helpers/OutboxAsserter.cs` | Read-only helper used across the suite to assert "the event was persisted in the same tx" without waiting on the dispatcher's polling clock |
+| Health | `HealthEndpointTests.cs` | `/health/live` returns Healthy, `/health/ready` includes the Postgres DB probe, `/health` returns the full report; stopping the testcontainer flips `/health/ready` to 503 |
+| Outbox lifecycle | `OutboxLifecycleTests.cs` | Poison-pill quarantine at `Attempts >= 10`, 30-day retention DELETE via the real `OutboxCleanupService.CleanupOnceAsync` (`InternalsVisibleTo`), envelope-shape sanity |
+| Authorization wall | `AuthorizationEndpointTests.cs` | Anonymous on every protected Sales route returns 401 (GET/POST/PUT/DELETE/PATCH-cancel/PATCH-items-cancel); login + signup + health stay reachable; mass-assignment defence (smuggled `role: "Admin"` on signup falls back to Customer) |
+| Missing scenarios | `MissingScenarioTests.cs` | Cancel-already-cancelled HTTP idempotency, PUT with empty items returns 400 with `Items` in `errors{}`, PUT replacing all items with brand-new productIds (no Skip), multi-key `_order` tie-breaker, combined filters (customerId + date range + isCancelled) AND-ed |
+| If-Match contract | `IfMatchEndpointTests.cs` | `If-Match: *` bypasses precondition; `If-Match: ""` treated as absent; stale value returns 412 |
+| Abuse vectors | `AbuseEndpointTests.cs` | XSS round-trip (`<script>` stored verbatim, JSON-escaped on output), 51-char SaleNumber/201-char names → 400, malformed GUID → 404 (route constraint), unknown `_api_version` returns 400/404 not 500 |
+| Production parity | `JwtProductionParityTests.cs` | Dedicated factory running under "Staging" env (iss/aud mandatory): generated token carries `iss`, `aud`, `jti`, `iat`; signup → login → authenticated GET round-trips. Regression guard for CN-2 (generator omitting iss/aud → 401 storm in prod) |
+| Outbox side-effects (helper) | `Helpers/OutboxAsserter.cs` | Reads rows directly, asserts `EventType` alias and deserialises the envelope's `data` block into a typed payload — used by every test that touches the outbox |
 
 #### Unit test coverage matrix
 
@@ -453,24 +472,67 @@ dotnet test
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` runs three jobs on every push and pull request:
+`.github/workflows/ci.yml` runs **six jobs**. PR-blocking jobs trigger
+on every push / pull request; the heavy ones (mutation testing,
+supply-chain) run nightly + on `workflow_dispatch` so they don't slow
+the critical path.
 
-- **build-test** — `dotnet restore`, `dotnet build` (Release),
-  `dotnet format --verify-no-changes`, and the unit test suite with
-  Coverlet collection. Test results are uploaded as a workflow artifact.
-- **integration-test** — runs the Testcontainers Postgres suite. The
-  GitHub-hosted `ubuntu-latest` runner ships with a Docker daemon, so no
-  extra services are needed.
-- **secret-scan** — `gitleaks/gitleaks-action` on the full history.
+| Job | Trigger | What it does |
+|---|---|---|
+| `build-test` | push, PR | `dotnet restore` → `build` (Release) → `dotnet format --verify-no-changes` → unit tests with Coverlet + Codecov upload |
+| `integration-test` | push, PR | Testcontainers Postgres suite; ubuntu-latest already ships a Docker daemon |
+| `migration-validate` | push, PR | `dotnet ef migrations script --idempotent` against the ORM project; fails if the rendered SQL is empty (catches a migration that references a model that no longer compiles) and uploads the script as an artifact |
+| `supply-chain` | push, PR | `dotnet list package --vulnerable --include-transitive` fails the PR on `Critical`; CycloneDX SBOM is generated and uploaded as an artifact for downstream provenance |
+| `mutation-testing` | nightly + manual | Stryker.NET against `Domain` + `Application` ([`stryker-config.json`](stryker-config.json)), thresholds high 85 / low 70 / break 60. HTML report uploaded as an artifact |
+| `secret-scan` | push, PR | `gitleaks/gitleaks-action` on the full history (`fetch-depth: 0`) |
+
+[`.github/dependabot.yml`](.github/dependabot.yml) watches NuGet
+(grouped by Microsoft runtime / OpenTelemetry / test tooling), GitHub
+Actions, and the WebApi Dockerfile — weekly PR cadence, max 10
+open at a time.
 
 ### Coverage report
 
 ```bash
-
-./coverage-report.sh   # or coverage-report.bat on Windows
+# From the repo root:
+bash scripts/coverage-report.sh        # macOS / Linux / git-bash
+scripts/coverage-report.bat            # Windows cmd.exe
 open TestResults/CoverageReport/index.html
 ```
 
 Uses [Coverlet](https://github.com/coverlet-coverage/coverlet) +
 [ReportGenerator](https://reportgenerator.io/), both installed by the
 script if missing.
+
+### Mutation testing (Stryker.NET)
+
+Coverage tells you which lines ran; mutation testing tells you whether
+the tests would notice if those lines were wrong. CI runs Stryker
+nightly + on `workflow_dispatch`. Run it locally:
+
+```bash
+dotnet tool install --global dotnet-stryker
+dotnet stryker --config-file stryker-config.json --reporter cleartext --reporter html
+open StrykerOutput/<timestamp>/reports/mutation-report.html
+```
+
+Scope is `Domain` + `Application` (ORM / WebApi mutations are mostly
+noise on a portfolio-sized suite); thresholds are high 85 / low 70 /
+break 60 — see [`stryker-config.json`](stryker-config.json) for the
+rationale.
+
+---
+
+## Engineering documentation
+
+| Document | What it covers |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | Layered DDD, MediatR pipeline, transactional outbox, CreateSale sequence diagram |
+| [`docs/api.md`](docs/api.md) | Every endpoint, ProblemDetails contract, ETag/If-Match, Idempotency-Key, status codes |
+| [`docs/database.md`](docs/database.md) | Schema, indexes (composite / partial / GIN trgm), CHECK constraints, RowVersion trigger, migrations |
+| [`docs/security.md`](docs/security.md) | AuthN/AuthZ posture, OWASP Top 10 mapping, audit history, JWT rotation runbook anchor |
+| [`docs/devops.md`](docs/devops.md) | Docker, compose, health checks, observability, CI job table, troubleshooting |
+| [`docs/testing.md`](docs/testing.md) | Unit + integration matrix, fixtures, Stryker, smoke script |
+| [`docs/runbook.md`](docs/runbook.md) | 8 on-call scenarios: DB down, outbox backlog, JWT leak, Redis degraded, rate-limit storm, idempotency replays, security incident, queries |
+| [`docs/challenge-brief.md`](docs/challenge-brief.md) | Verbatim copy of the original challenge statement |
+| [`docs/spec/`](docs/spec/) | Original template spec (overview, tech stack, frameworks, project structure, general-api, users-api, products-api, carts-api, auth-api) |

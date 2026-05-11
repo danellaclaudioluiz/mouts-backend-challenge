@@ -1,9 +1,10 @@
 # Challenge brief
 
 Verbatim copy of the original DeveloperStore evaluation statement. The
-template under [](../) ships with its
-own `spec/` folder (Overview, Tech Stack, Frameworks, Project Structure,
-General API conventions) — the link list below points to those.
+upstream template ships its own spec set (Overview, Tech Stack,
+Frameworks, Project Structure, General API conventions) which lives
+unchanged under [`docs/spec/`](spec/) — the link list at the bottom of
+this page points to those files.
 
 ---
 
@@ -74,10 +75,12 @@ Discount tiers:
 
 ## Template documentation (preserved from the template)
 
-- [Overview](../spec/overview.md) — not present in this
-  repo; placeholder kept for completeness
-- [Tech Stack](../spec/tech-stack.md) — same
-- [Frameworks](../spec/frameworks.md) — same
-- [Project Structure](../spec/project-structure.md) — same
-- [General API conventions](spec/general-api.md) — pagination,
-  filtering, ordering rules followed by the Sales list endpoint
+Original spec from the upstream `.doc/` folder, moved verbatim into
+`docs/spec/` during the project restructure:
+
+- [Overview](spec/overview.md) — context and goal of the broader DeveloperStore exercise
+- [Tech Stack](spec/tech-stack.md) — backend / frontend / mobile pillars
+- [Frameworks](spec/frameworks.md) — recommended libraries
+- [Project Structure](spec/project-structure.md) — layout the template ships with
+- [General API conventions](spec/general-api.md) — pagination, filtering, ordering rules followed by the Sales list endpoint
+- [Users API](spec/users-api.md), [Products API](spec/products-api.md), [Carts API](spec/carts-api.md), [Auth API](spec/auth-api.md) — endpoint specs for the broader scope (this submission implements Sales)

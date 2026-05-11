@@ -236,6 +236,27 @@ force-pushed; running `git log --all -S '<the-old-string>'` should now
 return nothing. The full procedure is documented in
 [`runbook.md` § 3](runbook.md#3-jwt-secret-leaked--rotated).
 
+## Supply chain
+
+- **Vulnerability gate.** The `supply-chain` CI job runs
+  `dotnet list package --vulnerable --include-transitive` against every
+  PR-merging branch. A `Critical` finding fails the build — the project
+  cannot ship with known-critical CVEs in any dependency tree.
+- **SBOM.** The same job emits a CycloneDX Software Bill of Materials
+  via `CycloneDX` (`dotnet CycloneDX <sln> --json`) and uploads it as a
+  workflow artifact, so the exact dependency graph used at any commit
+  is auditable after the fact.
+- **Dependabot.** [`.github/dependabot.yml`](../.github/dependabot.yml)
+  opens weekly PRs for NuGet (grouped by Microsoft runtime /
+  OpenTelemetry / test tooling), GitHub Actions, and the WebApi
+  Dockerfile — capped at 10 simultaneous open PRs.
+- **Mutation testing as a security adjunct.** Stryker.NET
+  ([`stryker-config.json`](../stryker-config.json)) runs nightly and
+  flags coverage gaps the test suite would otherwise hide; security
+  invariants (e.g. quantity caps, role hard-coding) are mutated
+  alongside business rules so a hand-edited bypass to a check is
+  caught.
+
 ---
 
 ## Information disclosure
