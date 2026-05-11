@@ -140,35 +140,59 @@ public class OutboxDispatcherService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Fan-out for the Phase 2 broker round-trip. Tuned for a real broker
+    /// (Kafka / RabbitMQ): low enough that a single dispatcher pod
+    /// doesn't saturate the broker's connection pool, high enough that
+    /// network latency on each publish overlaps with the others.
+    /// Configurable via <c>Outbox:DispatchConcurrency</c> if a deployment
+    /// needs to tune it.
+    /// </summary>
+    private const int DefaultDispatchConcurrency = 4;
+
     private async Task DispatchPendingAsync(CancellationToken cancellationToken)
     {
         // Phase 1: claim a batch under a short transaction.
         var claimed = await ClaimBatchAsync(cancellationToken);
         if (claimed.Count == 0) return;
 
-        // Phase 2: publish each message outside any transaction. With a real
-        // broker, this is the slow part — we hold zero DB locks here.
-        var succeeded = new List<Guid>(claimed.Count);
-        var failed = new List<(Guid Id, string Error)>();
+        // Phase 2: publish in parallel — bounded by DispatchConcurrency
+        // so a single tick can't open more connections to the broker
+        // than the operator wants. Each result lands in a ConcurrentBag
+        // so the bookkeeping below stays correct without explicit locks.
+        var succeeded = new System.Collections.Concurrent.ConcurrentBag<Guid>();
+        var failed = new System.Collections.Concurrent.ConcurrentBag<(Guid Id, string Error)>();
 
-        foreach (var message in claimed)
+        var maxConcurrency = _configuration.GetValue<int?>("Outbox:DispatchConcurrency")
+            ?? DefaultDispatchConcurrency;
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = maxConcurrency,
+            CancellationToken = cancellationToken
+        };
+
+        await Parallel.ForEachAsync(claimed, options, async (message, ct) =>
         {
             try
             {
-                await DeliverAsync(message, cancellationToken);
+                await DeliverAsync(message, ct);
                 succeeded.Add(message.Id);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 var error = ex.Message.Length > 2000 ? ex.Message[..2000] : ex.Message;
                 failed.Add((message.Id, error));
                 _logger.LogWarning(ex,
                     "Failed to dispatch outbox message {MessageId}", message.Id);
             }
-        }
+        });
 
-        // Phase 3: short transactions to mark outcomes.
-        await PersistOutcomesAsync(succeeded, failed, cancellationToken);
+        // Phase 3: short transactions to mark outcomes (serial — they
+        // share the DbContext via the scope factory).
+        await PersistOutcomesAsync(
+            succeeded.ToArray(),
+            failed.ToArray(),
+            cancellationToken);
     }
 
     private async Task<List<OutboxMessage>> ClaimBatchAsync(CancellationToken cancellationToken)
