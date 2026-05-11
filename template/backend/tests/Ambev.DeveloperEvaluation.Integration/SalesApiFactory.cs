@@ -1,3 +1,6 @@
+using Ambev.DeveloperEvaluation.Common.Security;
+using Ambev.DeveloperEvaluation.Domain.Entities;
+using Ambev.DeveloperEvaluation.Domain.Enums;
 using Ambev.DeveloperEvaluation.ORM;
 using Ambev.DeveloperEvaluation.WebApi;
 using Microsoft.AspNetCore.Hosting;
@@ -109,6 +112,58 @@ public class SalesApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     public Task StopDatabaseAsync() => _postgres.StopAsync();
 
     public Task StartDatabaseAsync() => _postgres.StartAsync();
+
+    /// <summary>
+    /// Mints a JWT for an Admin "integration test" principal and returns
+    /// it as a raw bearer string. The user is NOT persisted — the API
+    /// only validates the JWT signature/lifetime/issuer, never re-fetches
+    /// the user by id. Production middleware that re-checks User.Status
+    /// (planned, see security review H4) would also need a real DB row.
+    /// </summary>
+    public string MintBearerToken(string role = "Admin", Guid? userId = null)
+    {
+        using var scope = Services.CreateScope();
+        var generator = scope.ServiceProvider.GetRequiredService<IJwtTokenGenerator>();
+        var user = new User
+        {
+            Id = userId ?? Guid.NewGuid(),
+            Username = "integration-tests",
+            Email = "integration@tests.local",
+            Role = role switch
+            {
+                "Admin" => UserRole.Admin,
+                "Manager" => UserRole.Manager,
+                _ => UserRole.Customer
+            },
+            Status = UserStatus.Active
+        };
+        return generator.GenerateToken(user);
+    }
+
+    /// <summary>
+    /// Every client created via <c>CreateClient()</c> is automatically
+    /// authenticated as an Admin principal so existing tests don't need
+    /// to thread a bearer token through each call. Tests that need to
+    /// probe the anonymous path do so via <c>CreateAnonymousClient()</c>.
+    /// </summary>
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", MintBearerToken());
+    }
+
+    /// <summary>
+    /// Returns a client WITHOUT the default bearer header — used by tests
+    /// that exercise the authentication / authorization boundary itself
+    /// (anonymous → 401, anonymous-allowed endpoints → 200, etc.).
+    /// </summary>
+    public HttpClient CreateAnonymousClient()
+    {
+        var client = base.CreateClient();
+        client.DefaultRequestHeaders.Authorization = null;
+        return client;
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
