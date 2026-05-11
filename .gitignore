@@ -5,6 +5,11 @@
 # Especific Folders
 .[eE]ng/[dD]ata/
 
+# Local secrets — never commit. .env.example is the template that ships.
+.env
+*.env
+!.env.example
+
 # User-specific files
 *.rsuser
 *.suo

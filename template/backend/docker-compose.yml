@@ -1,5 +1,9 @@
 version: '3.8'
 
+# Secrets are read from a sibling .env file (which is gitignored) so the
+# git history never carries a real password. Local devs copy .env.example
+# to .env and fill in their own values; CI injects them via the runner.
+
 services:
   ambev.developerevaluation.webapi:
     container_name: ambev_developer_evaluation_webapi
@@ -8,9 +12,11 @@ services:
       context: .
       dockerfile: src/Ambev.DeveloperEvaluation.WebApi/Dockerfile
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Development}
       - ASPNETCORE_HTTP_PORTS=8080
       - ASPNETCORE_HTTPS_PORTS=8081
+      - ConnectionStrings__DefaultConnection=Host=ambev.developerevaluation.database;Port=5432;Database=${POSTGRES_DB:?POSTGRES_DB is required};Username=${POSTGRES_USER:?POSTGRES_USER is required};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - Jwt__SecretKey=${JWT_SECRET_KEY:?JWT_SECRET_KEY is required — generate at least 32 bytes random}
     ports:
       - "8080"
       - "8081"
@@ -20,31 +26,31 @@ services:
 
   ambev.developerevaluation.database:
     container_name: ambev_developer_evaluation_database
-    image: postgres:13
-
+    # Pinned by digest in production deploys; this image:tag is the dev
+    # convenience. Postgres 13 is end-of-life Nov/2025 — upgrade target is 16+.
+    image: postgres:16
     environment:
-      POSTGRES_DB: developer_evaluation
-      POSTGRES_USER: developer
-      POSTGRES_PASSWORD: REDACTED
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    # No host port publication by default — DB is reachable only from the
+    # WebApi container over the docker-compose network. Devs that want to
+    # poke at it with psql can `docker compose exec` or temporarily add a
+    # `ports: "127.0.0.1:5432:5432"` line to their local copy.
     restart: unless-stopped
 
   ambev.developerevaluation.nosql:
-    container_name: ambev_developer_evaluation_nosql 
-    image: mongo:8.0    
+    container_name: ambev_developer_evaluation_nosql
+    image: mongo:8.0
     environment:
-        MONGO_INITDB_ROOT_USERNAME: developer
-        MONGO_INITDB_ROOT_PASSWORD: REDACTED
+        MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:?MONGO_USER is required}
+        MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD is required}
     ports:
       - "27017"
 
   ambev.developerevaluation.cache:
-    container_name: ambev_developer_evaluation_cache 
-    image: redis:7.4.1-alpine     
-    command: redis-server --requirepass REDACTED
-    environment:
-       MONGO_INITDB_ROOT_USERNAME: developer
-       MONGO_INITDB_ROOT_PASSWORD: REDACTED
+    container_name: ambev_developer_evaluation_cache
+    image: redis:7.4.1-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     ports:
        - "6379"
