@@ -13,6 +13,14 @@
 
 services:
   ambev.developerevaluation.webapi:
+    # The base compose only forwards a handful of env vars explicitly
+    # (ConnectionStrings__DefaultConnection, Jwt__SecretKey, etc.).
+    # Production also needs Jwt__Issuer/Audience, Cors__AllowedOrigins,
+    # AllowedHosts, ForwardedHeaders__KnownNetworks and the rate-limit
+    # overrides — env_file loads the whole .env into the container so
+    # the AspNetCore config provider can read them.
+    env_file:
+      - .env
     environment:
       # TLS lives at the edge — Kestrel inside the container should
       # never bind to 8081; blank disables the HTTPS endpoint without
@@ -36,6 +44,16 @@ services:
 
   ambev.developerevaluation.cache:
     ports: []
+    # The base compose ships read_only:true + cap_drop:ALL, but the
+    # Redis entrypoint needs to drop privileges from root → redis
+    # (SETUID/SETGID) and write its RDB snapshot to /data. Restore the
+    # two caps and mount /data as tmpfs (no persistence is required —
+    # the cache is best-effort).
+    cap_add:
+      - SETUID
+      - SETGID
+    tmpfs:
+      - /data
     restart: unless-stopped
 
   # MongoDB is declared in the base compose for parity with the
