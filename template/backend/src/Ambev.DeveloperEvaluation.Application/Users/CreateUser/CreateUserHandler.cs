@@ -1,5 +1,6 @@
 ﻿using Ambev.DeveloperEvaluation.Common.Security;
 using Ambev.DeveloperEvaluation.Domain.Entities;
+using Ambev.DeveloperEvaluation.Domain.Enums;
 using Ambev.DeveloperEvaluation.Domain.Exceptions;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
 using AutoMapper;
@@ -43,6 +44,12 @@ public class CreateUserHandler : IRequestHandler<CreateUserCommand, CreateUserRe
             throw new ConflictException($"User with email {command.Email} already exists");
 
         var user = _mapper.Map<User>(command);
+        // Hard-code safe defaults on the self-service create path. The DTO
+        // omits Role/Status so an attacker can no longer ship Role=Admin
+        // through the public POST; role changes go through a dedicated
+        // admin-only endpoint.
+        user.Role = UserRole.Customer;
+        user.Status = UserStatus.Active;
         user.Password = _passwordHasher.HashPassword(command.Password);
 
         var createdUser = await _userRepository.CreateAsync(user, cancellationToken);

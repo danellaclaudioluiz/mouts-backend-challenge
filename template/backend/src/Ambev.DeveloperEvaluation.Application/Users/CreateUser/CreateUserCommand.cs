@@ -1,5 +1,4 @@
 ﻿using Ambev.DeveloperEvaluation.Common.Validation;
-using Ambev.DeveloperEvaluation.Domain.Enums;
 using MediatR;
 
 namespace Ambev.DeveloperEvaluation.Application.Users.CreateUser;
@@ -40,16 +39,8 @@ public class CreateUserCommand : IRequest<CreateUserResult>
     /// </summary>
     public string Email { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Gets or sets the status of the user.
-    /// </summary>
-    public UserStatus Status { get; set; }
-
-    /// <summary>
-    /// Gets or sets the role of the user.
-    /// </summary>
-    public UserRole Role { get; set; }
-
+    // Role/Status removed: self-service creation must never let the
+    // caller pick its own role. The handler hard-codes Customer/Active.
 
     public ValidationResultDetail Validate()
     {

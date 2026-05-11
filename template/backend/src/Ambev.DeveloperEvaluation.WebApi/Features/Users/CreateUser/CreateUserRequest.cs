@@ -1,39 +1,23 @@
-﻿using Ambev.DeveloperEvaluation.Domain.Enums;
-
-namespace Ambev.DeveloperEvaluation.WebApi.Features.Users.CreateUser;
+﻿namespace Ambev.DeveloperEvaluation.WebApi.Features.Users.CreateUser;
 
 /// <summary>
-/// Represents a request to create a new user in the system.
+/// Self-service user creation payload. Deliberately omits Role/Status:
+/// accepting them on a public endpoint is a mass-assignment + privilege-
+/// escalation hole (any anonymous caller could ship Role=Admin). The
+/// handler hard-codes role=Customer and status=Active; role changes are
+/// only allowed through a separate admin-only endpoint.
 /// </summary>
 public class CreateUserRequest
 {
-    /// <summary>
-    /// Gets or sets the username. Must be unique and contain only valid characters.
-    /// </summary>
+    /// <summary>Username — must be unique and contain only valid characters.</summary>
     public string Username { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Gets or sets the password. Must meet security requirements.
-    /// </summary>
+    /// <summary>Password — must meet the configured complexity policy.</summary>
     public string Password { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Gets or sets the phone number in format (XX) XXXXX-XXXX.
-    /// </summary>
+    /// <summary>Phone in format (XX) XXXXX-XXXX.</summary>
     public string Phone { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Gets or sets the email address. Must be a valid email format.
-    /// </summary>
+    /// <summary>Email address.</summary>
     public string Email { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the initial status of the user account.
-    /// </summary>
-    public UserStatus Status { get; set; }
-
-    /// <summary>
-    /// Gets or sets the role assigned to the user.
-    /// </summary>
-    public UserRole Role { get; set; }
 }
