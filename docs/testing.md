@@ -47,7 +47,7 @@ CI runs both suites on `ubuntu-latest` plus a Gitleaks scan — see
 ## Unit suite
 
 Project:
-[tests/Ambev.DeveloperEvaluation.Unit/](../template/backend/tests/Ambev.DeveloperEvaluation.Unit/).
+[tests/Ambev.DeveloperEvaluation.Unit/](../tests/Ambev.DeveloperEvaluation.Unit/).
 
 Frameworks: xUnit, FluentAssertions, NSubstitute, Bogus (test data).
 No external dependencies, no DB, no host.
@@ -56,11 +56,11 @@ No external dependencies, no DB, no host.
 
 | Area | File | What it asserts |
 |---|---|---|
-| Discount policy tiers | [`Domain/Services/SaleItemDiscountPolicyTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Unit/Domain/Services/SaleItemDiscountPolicyTests.cs) | 0% / 10% / 20% tiers; > 20 throws; ≤ 0 qty/price throws; tier borders × awkward unit prices (0.01, 33.33, 999.99) match the rounding contract (AwayFromZero, 2 dp) |
-| Sale aggregate invariants | [`Domain/Entities/SaleTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Unit/Domain/Entities/SaleTests.cs) | `AddItem` rejects duplicate productId, `AddItem` on cancelled sale throws, `Cancel` is idempotent + emits exactly one event, `CancelItem` recalculates total, unknown id throws, cancel-cancelled-item is a no-op, `Cancel` cascades to all active items |
-| Sale items | [`Domain/Entities/SaleItemTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Unit/Domain/Entities/SaleItemTests.cs) | Line total = `qty × price − discount` across every tier |
-| Validators | [`Application/.../{UseCase}ValidatorTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Unit/Application/) | Required fields, length caps, date bounds, items-array cap, per-item bounds |
-| Handlers | [`Application/.../{UseCase}HandlerTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Unit/Application/) | Repository + event publisher called with the right shape; duplicate `SaleNumber` raises `ConflictException`; missing aggregate raises `ResourceNotFoundException`; cache evictions happen on the write paths |
+| Discount policy tiers | [`Domain/Services/SaleItemDiscountPolicyTests.cs`](../tests/Ambev.DeveloperEvaluation.Unit/Domain/Services/SaleItemDiscountPolicyTests.cs) | 0% / 10% / 20% tiers; > 20 throws; ≤ 0 qty/price throws; tier borders × awkward unit prices (0.01, 33.33, 999.99) match the rounding contract (AwayFromZero, 2 dp) |
+| Sale aggregate invariants | [`Domain/Entities/SaleTests.cs`](../tests/Ambev.DeveloperEvaluation.Unit/Domain/Entities/SaleTests.cs) | `AddItem` rejects duplicate productId, `AddItem` on cancelled sale throws, `Cancel` is idempotent + emits exactly one event, `CancelItem` recalculates total, unknown id throws, cancel-cancelled-item is a no-op, `Cancel` cascades to all active items |
+| Sale items | [`Domain/Entities/SaleItemTests.cs`](../tests/Ambev.DeveloperEvaluation.Unit/Domain/Entities/SaleItemTests.cs) | Line total = `qty × price − discount` across every tier |
+| Validators | [`Application/.../{UseCase}ValidatorTests.cs`](../tests/Ambev.DeveloperEvaluation.Unit/Application/) | Required fields, length caps, date bounds, items-array cap, per-item bounds |
+| Handlers | [`Application/.../{UseCase}HandlerTests.cs`](../tests/Ambev.DeveloperEvaluation.Unit/Application/) | Repository + event publisher called with the right shape; duplicate `SaleNumber` raises `ConflictException`; missing aggregate raises `ResourceNotFoundException`; cache evictions happen on the write paths |
 
 Mocks are `NSubstitute.For<>`-style stand-ins behind the domain
 contracts (`ISaleRepository`, `IDomainEventPublisher`, `ISaleReadCache`).
@@ -71,11 +71,11 @@ Handlers under test never see EF Core.
 ## Integration suite
 
 Project:
-[tests/Ambev.DeveloperEvaluation.Integration/](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/).
+[tests/Ambev.DeveloperEvaluation.Integration/](../tests/Ambev.DeveloperEvaluation.Integration/).
 
 ### Fixture
 
-[`SalesApiFactory.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/SalesApiFactory.cs)
+[`SalesApiFactory.cs`](../tests/Ambev.DeveloperEvaluation.Integration/SalesApiFactory.cs)
 is a `WebApplicationFactory<Program> + IAsyncLifetime`:
 
 1. Boots a `postgres:16` testcontainer.
@@ -91,13 +91,13 @@ is a `WebApplicationFactory<Program> + IAsyncLifetime`:
    for the boundary tests.
 6. Bumps `RateLimit:PermitLimit` to 10 000 so the broad suite doesn't
    trip the throttle. The dedicated rate-limit test class uses
-   [`RateLimitedSalesApiFactory.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/RateLimitedSalesApiFactory.cs)
+   [`RateLimitedSalesApiFactory.cs`](../tests/Ambev.DeveloperEvaluation.Integration/RateLimitedSalesApiFactory.cs)
    with `PermitLimit = 5, WindowSeconds = 2`.
 
 ### Isolation
 
 All integration tests live in the
-[`IntegrationCollection`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/IntegrationCollection.cs).
+[`IntegrationCollection`](../tests/Ambev.DeveloperEvaluation.Integration/IntegrationCollection.cs).
 xUnit serialises tests in the same collection, so per-test
 `TRUNCATE … CASCADE` resets are race-free without locking.
 
@@ -108,29 +108,29 @@ the wall-clock cost reasonable for ~50 cases.
 
 | Helper | Purpose |
 |---|---|
-| [`OutboxAsserter.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/Helpers/OutboxAsserter.cs) | Reads `OutboxMessages` directly so tests can assert "the side-effect was persisted in the same transaction" without waiting on the dispatcher's polling clock. Deserialises the CloudEvents envelope's `data` field and asserts the `eventId` presence (consumer dedup contract). |
-| [`PayloadBuilder.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/Helpers/PayloadBuilder.cs) | Fluent builder for `CreateSaleRequest` / `UpdateSaleRequest` test bodies. |
-| [`ProblemDetailsAsserter.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/Helpers/ProblemDetailsAsserter.cs) | Asserts that 4xx / 5xx responses are `application/problem+json` with the expected `status`, `title`, and `instance`. |
+| [`OutboxAsserter.cs`](../tests/Ambev.DeveloperEvaluation.Integration/Helpers/OutboxAsserter.cs) | Reads `OutboxMessages` directly so tests can assert "the side-effect was persisted in the same transaction" without waiting on the dispatcher's polling clock. Deserialises the CloudEvents envelope's `data` field and asserts the `eventId` presence (consumer dedup contract). |
+| [`PayloadBuilder.cs`](../tests/Ambev.DeveloperEvaluation.Integration/Helpers/PayloadBuilder.cs) | Fluent builder for `CreateSaleRequest` / `UpdateSaleRequest` test bodies. |
+| [`ProblemDetailsAsserter.cs`](../tests/Ambev.DeveloperEvaluation.Integration/Helpers/ProblemDetailsAsserter.cs) | Asserts that 4xx / 5xx responses are `application/problem+json` with the expected `status`, `title`, and `instance`. |
 
 ### Coverage matrix
 
 | Area | File | What it asserts |
 |---|---|---|
-| Happy paths + ETag/Location | [`SalesEndpointsTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/SalesEndpointsTests.cs) | POST returns 201 + `Location` + `ETag`; GET returns 404 problem details; validation errors return 400 problem details; PATCH `/cancel` toggles `IsCancelled` + writes a `sale.cancelled.v1` outbox row; stale `If-Match` returns 412 |
+| Happy paths + ETag/Location | [`SalesEndpointsTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/SalesEndpointsTests.cs) | POST returns 201 + `Location` + `ETag`; GET returns 404 problem details; validation errors return 400 problem details; PATCH `/cancel` toggles `IsCancelled` + writes a `sale.cancelled.v1` outbox row; stale `If-Match` returns 412 |
 | Idempotency-Key | `SalesEndpointsTests.cs` | Replay returns cached 201 byte-equal to the original; different body returns 422; whitespace + key-order variants share the canonical hash; 4xx responses are not cached; key > 256 chars returns 400 |
-| Concurrency races | [`ConcurrencyTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/ConcurrencyTests.cs) | Two PUTs with the same stale `If-Match` → exactly one 200 + one 412/409 and the DB reflects the winner only; 5 concurrent POSTs with the same `Idempotency-Key` → exactly one `Sales` row regardless of in-flight lock outcome |
-| If-Match precondition | [`IfMatchEndpointTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/IfMatchEndpointTests.cs) | `If-Match: *` opt-out; missing header proceeds; current ETag succeeds; stale value returns 412 |
-| Update | [`UpdateSaleEndpointTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/UpdateSaleEndpointTests.cs) | Happy path + diff-style update keeps stable item ids; update against a cancelled sale returns 400; unknown id returns 404 |
-| Delete | [`DeleteSaleEndpointTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/DeleteSaleEndpointTests.cs) | Hard-delete cascades items; current `If-Match` succeeds; stale `If-Match` returns 412; unknown id returns 404 |
-| Cancel item | [`CancelSaleItemEndpointTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/CancelSaleItemEndpointTests.cs) | Item flagged cancelled + total recalculated; second cancel on same item is idempotent (no extra event); unknown sale → 404; unknown item → 400 |
-| List + pagination + filters | [`ListSalesEndpointTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/ListSalesEndpointTests.cs) | Page/size paging; customer/branch/`isCancelled` filters; ordering; bad order key → 400; oversize page → 400; empty page is well-formed; keyset cursor mode; `_page` + `_cursor` together → 400 |
-| Boundaries | [`BoundaryEndpointTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/BoundaryEndpointTests.cs) | Exactly `MaxItemsPerSale` (100) items accepted; 101 items → 400; duplicate `productId` across lines → 400 (cap cannot be split) |
-| Authorization | [`AuthorizationEndpointTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/AuthorizationEndpointTests.cs) | Anonymous → 401 on authenticated endpoints; `POST /api/v1/auth` / `POST /api/v1/users` / `/health/*` reachable anonymous; mass-assignment defence — `role: "Admin"` in signup body is silently dropped |
-| Rate limit | [`RateLimitEndpointTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/RateLimitEndpointTests.cs) | Dedicated factory with `PermitLimit=5, WindowSeconds=2`: bursts beyond the permit return 429; window reset releases the next burst |
-| Abuse vectors | [`AbuseEndpointTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/AbuseEndpointTests.cs) | Oversize payloads, malformed JSON, header injection attempts surface as 400 problem details — never 500 |
-| Health | [`HealthEndpointTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/HealthEndpointTests.cs) | `/health/live` returns Healthy; `/health/ready` includes the Postgres DB probe; `/health` returns the full report; stopping the testcontainer drops `/health/ready` to 503 |
-| Outbox lifecycle | [`OutboxLifecycleTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/OutboxLifecycleTests.cs) | The dispatcher claims, publishes, marks rows processed; dead-letter cap behaviour; LISTEN/NOTIFY wakeup |
-| Missing scenarios | [`MissingScenarioTests.cs`](../template/backend/tests/Ambev.DeveloperEvaluation.Integration/MissingScenarioTests.cs) | Pinned `[Fact(Skip = "…")]` entries that document expected gaps so reviewers see them without diffing the suite |
+| Concurrency races | [`ConcurrencyTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/ConcurrencyTests.cs) | Two PUTs with the same stale `If-Match` → exactly one 200 + one 412/409 and the DB reflects the winner only; 5 concurrent POSTs with the same `Idempotency-Key` → exactly one `Sales` row regardless of in-flight lock outcome |
+| If-Match precondition | [`IfMatchEndpointTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/IfMatchEndpointTests.cs) | `If-Match: *` opt-out; missing header proceeds; current ETag succeeds; stale value returns 412 |
+| Update | [`UpdateSaleEndpointTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/UpdateSaleEndpointTests.cs) | Happy path + diff-style update keeps stable item ids; update against a cancelled sale returns 400; unknown id returns 404 |
+| Delete | [`DeleteSaleEndpointTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/DeleteSaleEndpointTests.cs) | Hard-delete cascades items; current `If-Match` succeeds; stale `If-Match` returns 412; unknown id returns 404 |
+| Cancel item | [`CancelSaleItemEndpointTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/CancelSaleItemEndpointTests.cs) | Item flagged cancelled + total recalculated; second cancel on same item is idempotent (no extra event); unknown sale → 404; unknown item → 400 |
+| List + pagination + filters | [`ListSalesEndpointTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/ListSalesEndpointTests.cs) | Page/size paging; customer/branch/`isCancelled` filters; ordering; bad order key → 400; oversize page → 400; empty page is well-formed; keyset cursor mode; `_page` + `_cursor` together → 400 |
+| Boundaries | [`BoundaryEndpointTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/BoundaryEndpointTests.cs) | Exactly `MaxItemsPerSale` (100) items accepted; 101 items → 400; duplicate `productId` across lines → 400 (cap cannot be split) |
+| Authorization | [`AuthorizationEndpointTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/AuthorizationEndpointTests.cs) | Anonymous → 401 on authenticated endpoints; `POST /api/v1/auth` / `POST /api/v1/users` / `/health/*` reachable anonymous; mass-assignment defence — `role: "Admin"` in signup body is silently dropped |
+| Rate limit | [`RateLimitEndpointTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/RateLimitEndpointTests.cs) | Dedicated factory with `PermitLimit=5, WindowSeconds=2`: bursts beyond the permit return 429; window reset releases the next burst |
+| Abuse vectors | [`AbuseEndpointTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/AbuseEndpointTests.cs) | Oversize payloads, malformed JSON, header injection attempts surface as 400 problem details — never 500 |
+| Health | [`HealthEndpointTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/HealthEndpointTests.cs) | `/health/live` returns Healthy; `/health/ready` includes the Postgres DB probe; `/health` returns the full report; stopping the testcontainer drops `/health/ready` to 503 |
+| Outbox lifecycle | [`OutboxLifecycleTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/OutboxLifecycleTests.cs) | The dispatcher claims, publishes, marks rows processed; dead-letter cap behaviour; LISTEN/NOTIFY wakeup |
+| Missing scenarios | [`MissingScenarioTests.cs`](../tests/Ambev.DeveloperEvaluation.Integration/MissingScenarioTests.cs) | Pinned `[Fact(Skip = "…")]` entries that document expected gaps so reviewers see them without diffing the suite |
 
 ### Authenticated by default
 

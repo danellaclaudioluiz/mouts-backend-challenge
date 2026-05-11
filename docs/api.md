@@ -14,7 +14,7 @@ range advertised on the `api-supported-versions` response header).
 ### Versioning
 
 - Implemented by `Asp.Versioning.Mvc`. Route template
-  `/api/v{version:apiVersion}/[controller]` ([SalesController.cs:22](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/SalesController.cs#L22)).
+  `/api/v{version:apiVersion}/[controller]` ([SalesController.cs:22](../src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/SalesController.cs#L22)).
 - Default version `1.0` when omitted (`AssumeDefaultVersionWhenUnspecified
   = true`); response always carries
   `api-supported-versions: 1.0`.
@@ -57,8 +57,8 @@ Two envelope types are returned, depending on the endpoint:
 ```
 
 Sources:
-[`ApiResponseWithData.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Common/ApiResponseWithData.cs),
-[`PaginatedResponse.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Common/PaginatedResponse.cs).
+[`ApiResponseWithData.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Common/ApiResponseWithData.cs),
+[`PaginatedResponse.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Common/PaginatedResponse.cs).
 
 ### Pagination, ordering, filtering
 
@@ -96,7 +96,7 @@ All errors are RFC 7807 problem details:
 
 `errors` is populated only on validation problems (400). The exception
 → ProblemDetails translation lives in
-[`ValidationExceptionMiddleware.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Middleware/ValidationExceptionMiddleware.cs).
+[`ValidationExceptionMiddleware.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Middleware/ValidationExceptionMiddleware.cs).
 
 ### Status code matrix
 
@@ -138,7 +138,7 @@ All errors are RFC 7807 problem details:
 ## Sales
 
 Controller:
-[`SalesController.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/SalesController.cs).
+[`SalesController.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/SalesController.cs).
 
 ### `POST /api/v1/sales` — Create a sale
 
@@ -169,7 +169,7 @@ Idempotency-Key: 5a8c0e2e-3e7a-4f3a-91c7-7d5a3e1f9b22
 #### Validation (FluentValidation)
 
 Source:
-[`CreateSaleValidator.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Application/Sales/CreateSale/CreateSaleValidator.cs).
+[`CreateSaleValidator.cs`](../src/Ambev.DeveloperEvaluation.Application/Sales/CreateSale/CreateSaleValidator.cs).
 
 | Field | Rule |
 |---|---|
@@ -272,8 +272,8 @@ Response:
 
 `SaleSummaryDto` is header-only — call `GET /api/v1/sales/{id}` for the
 items. Sources:
-[`SaleSummaryDto.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Application/Sales/Common/SaleSummaryDto.cs),
-[`ListSalesRequest.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/ListSales/ListSalesRequest.cs).
+[`SaleSummaryDto.cs`](../src/Ambev.DeveloperEvaluation.Application/Sales/Common/SaleSummaryDto.cs),
+[`ListSalesRequest.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/ListSales/ListSalesRequest.cs).
 
 #### Keyset / cursor mode
 
@@ -290,7 +290,7 @@ are omitted (no COUNT(\*) is run). Ordering is fixed to
 
 `SaleNumber`, `SaleDate`, `TotalAmount`, `IsCancelled`, `CreatedAt`,
 `UpdatedAt`. Unknown columns return 400. Source:
-[`SaleListFilter.cs:15`](../template/backend/src/Ambev.DeveloperEvaluation.Domain/Repositories/SaleListFilter.cs#L15).
+[`SaleListFilter.cs:15`](../src/Ambev.DeveloperEvaluation.Domain/Repositories/SaleListFilter.cs#L15).
 
 #### Errors
 
@@ -329,7 +329,7 @@ If-Match: "1"
 
 `SaleNumber` is immutable and absent from `UpdateSaleRequest` — the
 route id identifies the sale.
-[`UpdateSaleRequest.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/UpdateSale/UpdateSaleRequest.cs).
+[`UpdateSaleRequest.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/UpdateSale/UpdateSaleRequest.cs).
 
 Response: `200 OK`, fresh `ETag`, full body.
 
@@ -407,7 +407,7 @@ PATCH /api/v1/sales/3a2b1c0d-.../items/c0ffee-.../cancel HTTP/1.1
 ## Auth
 
 Controller:
-[`AuthController.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Features/Auth/AuthController.cs).
+[`AuthController.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Features/Auth/AuthController.cs).
 
 ### `POST /api/v1/auth` — Authenticate
 
@@ -439,7 +439,7 @@ Success:
 single `Invalid credentials` message and run BCrypt verification even
 on unknown emails (constant-time path with a frozen dummy hash) so
 response timing cannot be used as an oracle. See
-[`AuthenticateUserHandler.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Application/Auth/AuthenticateUser/AuthenticateUserHandler.cs).
+[`AuthenticateUserHandler.cs`](../src/Ambev.DeveloperEvaluation.Application/Auth/AuthenticateUser/AuthenticateUserHandler.cs).
 
 | Status | Trigger |
 |---|---|
@@ -452,14 +452,14 @@ response timing cannot be used as an oracle. See
 ## Users
 
 Controller:
-[`UsersController.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Features/Users/UsersController.cs).
+[`UsersController.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Features/Users/UsersController.cs).
 
 ### `POST /api/v1/users` — Self-service signup (anonymous)
 
 Public on purpose. The handler **hard-codes `role=Customer` +
 `status=Active`** — `CreateUserRequest` does not expose those fields,
 defeating mass-assignment / privilege-escalation attempts.
-[`CreateUserRequest.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Features/Users/CreateUser/CreateUserRequest.cs).
+[`CreateUserRequest.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Features/Users/CreateUser/CreateUserRequest.cs).
 
 ```http
 POST /api/v1/users HTTP/1.1
@@ -506,7 +506,7 @@ response payload to avoid leaking connection strings or stack-trace
 fragments to anonymous callers. The full detail is in the server log.
 
 Source:
-[`HealthChecksExtension.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Common/HealthChecks/HealthChecksExtension.cs).
+[`HealthChecksExtension.cs`](../src/Ambev.DeveloperEvaluation.Common/HealthChecks/HealthChecksExtension.cs).
 
 ---
 

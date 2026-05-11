@@ -343,7 +343,7 @@ The schema and connection setup are tuned for production-style load:
 ### Running locally
 
 ```bash
-cd template/backend
+
 
 # 1. start the database (host port 5432:5432 is exposed)
 docker compose up -d ambev.developerevaluation.database
@@ -365,7 +365,7 @@ The default `appsettings.json` ships with **empty** secrets — the app
 fails fast on startup if `ConnectionStrings:DefaultConnection` or
 `Jwt:SecretKey` is missing. Secrets are externalised; pick one source:
 
-- **`docker compose up`** — copy `template/backend/.env.example` to
+- **`docker compose up`** — copy `.env.example` to
   `.env` (gitignored), fill in your values, and `docker compose up`.
   Compose refuses to start if any required variable is unset.
 - **`dotnet user-secrets`** — for `dotnet run` on the host. Set with
@@ -404,7 +404,7 @@ dotnet user-secrets set "Jwt:SecretKey" "..." \
 ### Running the tests
 
 ```bash
-cd template/backend
+
 dotnet test
 ```
 
@@ -461,7 +461,7 @@ dotnet test
 ### Coverage report
 
 ```bash
-cd template/backend
+
 ./coverage-report.sh   # or coverage-report.bat on Windows
 open TestResults/CoverageReport/index.html
 ```

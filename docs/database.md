@@ -48,9 +48,9 @@ No cross-aggregate FK from `Sales.CustomerId` / `BranchId` — those
 hold **external identities** (denormalised name kept alongside).
 
 Source of truth for the schema:
-[`Mapping/`](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Mapping/)
+[`Mapping/`](../src/Ambev.DeveloperEvaluation.ORM/Mapping/)
 and the migration files under
-[`Migrations/`](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Migrations/).
+[`Migrations/`](../src/Ambev.DeveloperEvaluation.ORM/Migrations/).
 
 ---
 
@@ -58,7 +58,7 @@ and the migration files under
 
 ### `Sales`
 
-[SaleConfiguration.cs](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Mapping/SaleConfiguration.cs)
+[SaleConfiguration.cs](../src/Ambev.DeveloperEvaluation.ORM/Mapping/SaleConfiguration.cs)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -76,7 +76,7 @@ and the migration files under
 
 ### `SaleItems`
 
-[SaleItemConfiguration.cs](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Mapping/SaleItemConfiguration.cs)
+[SaleItemConfiguration.cs](../src/Ambev.DeveloperEvaluation.ORM/Mapping/SaleItemConfiguration.cs)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -90,13 +90,13 @@ and the migration files under
 
 ### `Users`
 
-[UserConfiguration.cs](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Mapping/UserConfiguration.cs).
+[UserConfiguration.cs](../src/Ambev.DeveloperEvaluation.ORM/Mapping/UserConfiguration.cs).
 `Email` and `Username` carry unique btree indexes (the authentication
 path goes through `Email`).
 
 ### `OutboxMessages`
 
-[OutboxMessageConfiguration.cs](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Mapping/OutboxMessageConfiguration.cs)
+[OutboxMessageConfiguration.cs](../src/Ambev.DeveloperEvaluation.ORM/Mapping/OutboxMessageConfiguration.cs)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -138,7 +138,7 @@ until cleanup runs.
 
 ## Check constraints
 
-[SaleItemConfiguration.cs:16](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Mapping/SaleItemConfiguration.cs#L16)
+[SaleItemConfiguration.cs:16](../src/Ambev.DeveloperEvaluation.ORM/Mapping/SaleItemConfiguration.cs#L16)
 
 | Constraint | Predicate |
 |---|---|
@@ -158,7 +158,7 @@ database refuses bad data even if a future writer bypasses the domain
 ### `trg_sales_bump_rowversion` — BEFORE UPDATE on `Sales`
 
 Maintains `Sales.RowVersion` for optimistic concurrency. Migration:
-[20260510213727_ReplaceXminWithRowVersionTrigger.cs](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Migrations/20260510213727_ReplaceXminWithRowVersionTrigger.cs).
+[20260510213727_ReplaceXminWithRowVersionTrigger.cs](../src/Ambev.DeveloperEvaluation.ORM/Migrations/20260510213727_ReplaceXminWithRowVersionTrigger.cs).
 
 ```sql
 CREATE OR REPLACE FUNCTION ambev_sales_bump_rowversion()
@@ -191,7 +191,7 @@ across the row's lifetime and immune to FREEZE.
 ### `trg_outbox_notify_pending` — AFTER INSERT on `OutboxMessages`
 
 Statement-level (one notification per batch, not per row). Migration:
-[20260510221545_OutboxNotifyTrigger.cs](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Migrations/20260510221545_OutboxNotifyTrigger.cs).
+[20260510221545_OutboxNotifyTrigger.cs](../src/Ambev.DeveloperEvaluation.ORM/Migrations/20260510221545_OutboxNotifyTrigger.cs).
 
 ```sql
 CREATE TRIGGER trg_outbox_notify_pending
@@ -209,7 +209,7 @@ poll interval) to sub-second under load.
 
 ## Extensions
 
-[20260510212959_EnableExtensionsAndTrigramIndex.cs](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Migrations/20260510212959_EnableExtensionsAndTrigramIndex.cs)
+[20260510212959_EnableExtensionsAndTrigramIndex.cs](../src/Ambev.DeveloperEvaluation.ORM/Migrations/20260510212959_EnableExtensionsAndTrigramIndex.cs)
 
 | Extension | Used for |
 |---|---|
@@ -253,7 +253,7 @@ Keepalive=30;
 ```
 
 EF Core configuration on top
-([Program.cs:203](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Program.cs#L203)):
+([Program.cs:203](../src/Ambev.DeveloperEvaluation.WebApi/Program.cs#L203)):
 
 - `AddDbContextPool<DefaultContext>(..., poolSize: 256)` — the EF Core
   context pool recycles the compiled model + change tracker across
@@ -273,8 +273,8 @@ EF Core configuration on top
 - **Compiled queries**. The two hottest reads use
   `EF.CompileAsyncQuery`: `Sale.GetByIdAsync` (touched by every
   write path) and `User.GetByEmailAsync` (every authn request). See
-  [`SaleRepository.cs`](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Repositories/SaleRepository.cs),
-  [`UserRepository.cs`](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Repositories/UserRepository.cs).
+  [`SaleRepository.cs`](../src/Ambev.DeveloperEvaluation.ORM/Repositories/SaleRepository.cs),
+  [`UserRepository.cs`](../src/Ambev.DeveloperEvaluation.ORM/Repositories/UserRepository.cs).
 - **No-tracking pre-checks**. `SaleNumberExistsAsync` /
   `EmailExistsAsync` use `AsNoTracking() + AnyAsync()` — no rows
   materialised. The unique index remains the source of truth, so a
@@ -287,7 +287,7 @@ EF Core configuration on top
   [architecture.md → Dispatcher mechanics](architecture.md#dispatcher-mechanics).
 - **Outbox cleanup runs in 5 000-row chunks**, each in its own short
   transaction — autovacuum keeps up and WAL doesn't spike. Source:
-  [`OutboxCleanupService.cs`](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Outbox/OutboxCleanupService.cs).
+  [`OutboxCleanupService.cs`](../src/Ambev.DeveloperEvaluation.ORM/Outbox/OutboxCleanupService.cs).
 
 ---
 

@@ -46,7 +46,7 @@ Every endpoint is authenticated unless it explicitly opts out via
 
 ### JWT signing posture
 
-[`AuthenticationExtension.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Common/Security/AuthenticationExtension.cs)
+[`AuthenticationExtension.cs`](../src/Ambev.DeveloperEvaluation.Common/Security/AuthenticationExtension.cs)
 
 - **HS256**.
 - Signing key (`Jwt:SecretKey`) must be **≥ 32 bytes**. The startup
@@ -63,7 +63,7 @@ Every endpoint is authenticated unless it explicitly opts out via
 
 ### Login flow defences
 
-[`AuthenticateUserHandler.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Application/Auth/AuthenticateUser/AuthenticateUserHandler.cs)
+[`AuthenticateUserHandler.cs`](../src/Ambev.DeveloperEvaluation.Application/Auth/AuthenticateUser/AuthenticateUserHandler.cs)
 
 - **Single response message** across "no such user" / "wrong password"
   / "inactive user" — `Invalid credentials` for all three. No
@@ -79,7 +79,7 @@ Every endpoint is authenticated unless it explicitly opts out via
 
 ### Password hashing
 
-[`BCryptPasswordHasher.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Common/Security/BCryptPasswordHasher.cs)
+[`BCryptPasswordHasher.cs`](../src/Ambev.DeveloperEvaluation.Common/Security/BCryptPasswordHasher.cs)
 
 - `BCrypt.Net.BCrypt` at work factor **12** — OWASP 2024 guidance for
   high-sensitivity / regulated APIs. Each +1 doubles cost.
@@ -114,7 +114,7 @@ a one-attribute change per endpoint.
 ### Mass-assignment defence
 
 `CreateUserRequest` deliberately **does not expose `Role` or `Status`**
-([`CreateUserRequest.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Features/Users/CreateUser/CreateUserRequest.cs)).
+([`CreateUserRequest.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Features/Users/CreateUser/CreateUserRequest.cs)).
 The handler hard-codes `role=Customer + status=Active` regardless of
 the body. A request that ships `{ "role": "Admin" }` is silently
 dropped at the JSON binding step, not "filtered" by hand. The
@@ -124,7 +124,7 @@ integration suite asserts this exact scenario.
 
 ## Transport hardening
 
-[Program.cs:349](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Program.cs#L349)
+[Program.cs:349](../src/Ambev.DeveloperEvaluation.WebApi/Program.cs#L349)
 
 - **HSTS** outside Development / Test (1 year, includeSubDomains).
   Browsers refuse plain-HTTP downgrades for the next year, including
@@ -139,7 +139,7 @@ integration suite asserts this exact scenario.
 
 ### Security headers
 
-[Program.cs:357](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Program.cs#L357)
+[Program.cs:357](../src/Ambev.DeveloperEvaluation.WebApi/Program.cs#L357)
 
 Cheap defence in depth, even for a JSON API:
 
@@ -160,7 +160,7 @@ surprise for clients that pipe responses straight into `innerHTML`.
 
 ### CORS
 
-[Program.cs:90](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Program.cs#L90)
+[Program.cs:90](../src/Ambev.DeveloperEvaluation.WebApi/Program.cs#L90)
 
 Restrictive by default. `Cors:AllowedOrigins` is the only knob —
 empty list → **deny all cross-origin traffic** (preflight fails
@@ -197,7 +197,7 @@ concern; documented as a deployment-level extension.
 
 ## Idempotency-Key
 
-[`IdempotencyMiddleware.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Middleware/IdempotencyMiddleware.cs)
+[`IdempotencyMiddleware.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Middleware/IdempotencyMiddleware.cs)
 
 Security-relevant properties beyond the safety story documented in
 [architecture.md](architecture.md#idempotency-key):
@@ -240,7 +240,7 @@ condition tracked: confirm the early-development password
 - **500 responses do not include stack traces**. The middleware
   produces a generic `Internal server error` problem detail; the full
   exception lands in Serilog (with `TraceId`/`SpanId` so the operator
-  can pivot). [`ValidationExceptionMiddleware.cs:131`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Middleware/ValidationExceptionMiddleware.cs#L131).
+  can pivot). [`ValidationExceptionMiddleware.cs:131`](../src/Ambev.DeveloperEvaluation.WebApi/Middleware/ValidationExceptionMiddleware.cs#L131).
 - **Unhandled-exception log lines exclude the query string**, since
   query strings can carry tokens, idempotency keys, or PII. Only the
   route is logged. (Same file, same site.)

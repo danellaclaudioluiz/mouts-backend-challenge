@@ -64,7 +64,7 @@ dotnet run --project src/Ambev.DeveloperEvaluation.WebApi
 
 ### Image build
 
-[`template/backend/Dockerfile`](../template/backend/Dockerfile) is a
+[`template/backend/Dockerfile`](../Dockerfile) is a
 standard ASP.NET multi-stage build, three stages:
 
 | Stage | Base | Purpose |
@@ -83,7 +83,7 @@ ALL` is a deployment-time hardening not enforced by the compose file
 
 ### Compose topology
 
-[`docker-compose.yml`](../template/backend/docker-compose.yml) declares
+[`docker-compose.yml`](../docker-compose.yml) declares
 four services:
 
 | Service | Image | Notes |
@@ -104,7 +104,7 @@ or "changeme" credential.
 
 ### Override file
 
-[`docker-compose.override.yml`](../template/backend/docker-compose.override.yml)
+[`docker-compose.override.yml`](../docker-compose.override.yml)
 is **local-development only**. Docker auto-merges it on top of the
 base compose, publishing Postgres / Redis / Mongo to `127.0.0.1` so
 host-process devs can reach the dependencies via `localhost:5432`,
@@ -131,7 +131,7 @@ ASP.NET double-underscore convention
 
 | Key | Mandatory | Notes |
 |---|---|---|
-| `ConnectionStrings:DefaultConnection` | always | Empty/missing → startup fails fast ([Program.cs:187](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Program.cs#L187)). |
+| `ConnectionStrings:DefaultConnection` | always | Empty/missing → startup fails fast ([Program.cs:187](../src/Ambev.DeveloperEvaluation.WebApi/Program.cs#L187)). |
 | `Jwt:SecretKey` | always | Must be ≥ 32 bytes. HS256. Re-issuing this invalidates every outstanding token. |
 | `Jwt:Issuer` | outside Development | Set to this API's URL. A leaked key cannot mint tokens accepted by another service. |
 | `Jwt:Audience` | outside Development | Resource the tokens grant access to. |
@@ -186,7 +186,7 @@ anonymous callers is unnecessary. Operators see the real detail in
 the server log.
 
 Source:
-[`HealthChecksExtension.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Common/HealthChecks/HealthChecksExtension.cs).
+[`HealthChecksExtension.cs`](../src/Ambev.DeveloperEvaluation.Common/HealthChecks/HealthChecksExtension.cs).
 
 ---
 
@@ -195,7 +195,7 @@ Source:
 ### Structured logging
 
 Serilog, configured in
-[`LoggingExtension.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Common/Logging/LoggingExtension.cs):
+[`LoggingExtension.cs`](../src/Ambev.DeveloperEvaluation.Common/Logging/LoggingExtension.cs):
 
 - `.Enrich.FromLogContext()` + `.Enrich.WithSpan()` so every line
   carries `TraceId` / `SpanId` pulled from the ambient OpenTelemetry
@@ -211,7 +211,7 @@ Serilog, configured in
 
 ### OpenTelemetry
 
-[Program.cs:229](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Program.cs#L229)
+[Program.cs:229](../src/Ambev.DeveloperEvaluation.WebApi/Program.cs#L229)
 
 Traces and metrics, both registered with OTLP exporters when
 `OpenTelemetry:OtlpEndpoint` (or the OTEL standard env var

@@ -1,7 +1,7 @@
 # Challenge brief
 
 Verbatim copy of the original DeveloperStore evaluation statement. The
-template under [template/backend/](../template/backend/) ships with its
+template under [template/backend/](../) ships with its
 own `.doc/` folder (Overview, Tech Stack, Frameworks, Project Structure,
 General API conventions) — the link list below points to those.
 
@@ -66,7 +66,7 @@ Discount tiers:
 | 10 – 20 | 20% |
 | > 20 | rejected (HTTP 400) |
 
-> Encoded once in [`SaleItemDiscountPolicy`](../template/backend/src/Ambev.DeveloperEvaluation.Domain/Services/SaleItemDiscountPolicy.cs)
+> Encoded once in [`SaleItemDiscountPolicy`](../src/Ambev.DeveloperEvaluation.Domain/Services/SaleItemDiscountPolicy.cs)
 > and enforced again by Postgres `CK_SaleItems_Quantity` (defence in
 > depth — see [database.md](database.md#check-constraints)).
 
@@ -74,10 +74,10 @@ Discount tiers:
 
 ## Template documentation (preserved from the template)
 
-- [Overview](../template/backend/.doc/overview.md) — not present in this
+- [Overview](../.doc/overview.md) — not present in this
   repo; placeholder kept for completeness
-- [Tech Stack](../template/backend/.doc/tech-stack.md) — same
-- [Frameworks](../template/backend/.doc/frameworks.md) — same
-- [Project Structure](../template/backend/.doc/project-structure.md) — same
+- [Tech Stack](../.doc/tech-stack.md) — same
+- [Frameworks](../.doc/frameworks.md) — same
+- [Project Structure](../.doc/project-structure.md) — same
 - [General API conventions](.doc/general-api.md) — pagination,
   filtering, ordering rules followed by the Sales list endpoint

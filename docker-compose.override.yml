@@ -1,0 +1,18 @@
+# Local-dev only — Docker auto-merges this on top of docker-compose.yml.
+# Publishes the DB / Redis / Mongo ports to the host so the WebApi
+# (running via `dotnet run` on the host) can reach them at localhost.
+# The production compose deliberately keeps these ports private to the
+# docker network — only override locally.
+
+services:
+  ambev.developerevaluation.database:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  ambev.developerevaluation.cache:
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  ambev.developerevaluation.nosql:
+    ports:
+      - "127.0.0.1:27017:27017"

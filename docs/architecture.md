@@ -55,7 +55,7 @@ between the controller and the repository.
   behaviour). It does not reference Domain.
 
 Project files: see the solution at
-[template/backend/Ambev.DeveloperEvaluation.sln](../template/backend/Ambev.DeveloperEvaluation.sln).
+[template/backend/Ambev.DeveloperEvaluation.sln](../Ambev.DeveloperEvaluation.sln).
 
 ---
 
@@ -126,34 +126,34 @@ each step.
    headers attached, CORS evaluated, rate limit checked, JWT validated,
    `[AllowAnonymous]` / `FallbackPolicy = RequireAuthenticatedUser`
    decides whether the call proceeds.
-   [`Program.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Program.cs)
+   [`Program.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Program.cs)
 2. **Idempotency middleware** inspects the `Idempotency-Key` header
    (POST only). On a hit, the cached 2xx body is replayed and the
    pipeline stops. On a miss, a short-lived in-flight lock is taken to
    serialise concurrent requests with the same key.
-   [`IdempotencyMiddleware.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Middleware/IdempotencyMiddleware.cs)
+   [`IdempotencyMiddleware.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Middleware/IdempotencyMiddleware.cs)
 3. **Routing → `SalesController.CreateSale`** binds the
    `CreateSaleRequest` and AutoMapper projects it into a
    `CreateSaleCommand`.
-   [`SalesController.cs:35`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/SalesController.cs#L35)
+   [`SalesController.cs:35`](../src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/SalesController.cs#L35)
 4. **MediatR ValidationBehavior** runs FluentValidation against the
    command. Any failure throws `ValidationException` which is converted
    to RFC 7807 by the exception middleware.
-   [`ValidationBehavior.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Common/Validation/ValidationBehavior.cs),
-   [`CreateSaleValidator.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Application/Sales/CreateSale/CreateSaleValidator.cs)
+   [`ValidationBehavior.cs`](../src/Ambev.DeveloperEvaluation.Common/Validation/ValidationBehavior.cs),
+   [`CreateSaleValidator.cs`](../src/Ambev.DeveloperEvaluation.Application/Sales/CreateSale/CreateSaleValidator.cs)
 5. **`CreateSaleHandler`** runs the cheap pre-check
    (`SaleNumberExistsAsync`), then constructs the aggregate via the
    `Sale.Create` factory — domain rules execute as the items are added
    (per-product uniqueness, 20-quantity cap, tiered discount).
-   [`CreateSaleHandler.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Application/Sales/CreateSale/CreateSaleHandler.cs),
-   [`Sale.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Domain/Entities/Sale.cs)
+   [`CreateSaleHandler.cs`](../src/Ambev.DeveloperEvaluation.Application/Sales/CreateSale/CreateSaleHandler.cs),
+   [`Sale.cs`](../src/Ambev.DeveloperEvaluation.Domain/Entities/Sale.cs)
 6. **Domain events staged.** The aggregate's `MarkCreated()` emits a
    `SaleCreatedEvent`. The handler hands every event in
    `sale.DomainEvents` to `IDomainEventPublisher.PublishAsync`, whose
    `OutboxDomainEventPublisher` implementation INSERTs an
    `OutboxMessages` row into the same EF `ChangeTracker` instance —
    guaranteeing it commits in the same transaction as the aggregate.
-   [`OutboxDomainEventPublisher.cs`](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Outbox/OutboxDomainEventPublisher.cs)
+   [`OutboxDomainEventPublisher.cs`](../src/Ambev.DeveloperEvaluation.ORM/Outbox/OutboxDomainEventPublisher.cs)
 7. **Persist.** `SaleRepository.CreateAsync` calls `SaveChangesAsync`.
    The Postgres trigger `ambev_sales_bump_rowversion` fires BEFORE
    UPDATE on `Sales` and the trigger `ambev_outbox_notify` fires AFTER
@@ -170,7 +170,7 @@ each step.
     publish to a broker in production). On success it sets
     `ProcessedAt`; on failure it bumps `Attempts` and stamps
     `LastError`, dead-letters at 10 failed attempts.
-    [`OutboxDispatcherService.cs`](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Outbox/OutboxDispatcherService.cs)
+    [`OutboxDispatcherService.cs`](../src/Ambev.DeveloperEvaluation.ORM/Outbox/OutboxDispatcherService.cs)
 
 ---
 
@@ -193,7 +193,7 @@ customer/branch identity at the time it was created.
 
 Item totals (`Quantity × UnitPrice − Discount`) are calculated by the
 domain on every mutation through
-[`SaleItemDiscountPolicy.Calculate`](../template/backend/src/Ambev.DeveloperEvaluation.Domain/Services/SaleItemDiscountPolicy.cs).
+[`SaleItemDiscountPolicy.Calculate`](../src/Ambev.DeveloperEvaluation.Domain/Services/SaleItemDiscountPolicy.cs).
 The same policy lives behind a Postgres `CK_SaleItems_Quantity` CHECK
 constraint, so a future caller bypassing the aggregate (raw SQL, ad-hoc
 migration) still cannot persist 21 of the same item.
@@ -250,11 +250,11 @@ or downstream consumers:
 | `ItemCancelledEvent` | `sale.item_cancelled.v1` |
 
 Event sources:
-[Domain/Events/](../template/backend/src/Ambev.DeveloperEvaluation.Domain/Events/).
+[Domain/Events/](../src/Ambev.DeveloperEvaluation.Domain/Events/).
 
 ### Dispatcher mechanics
 
-[`OutboxDispatcherService`](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Outbox/OutboxDispatcherService.cs)
+[`OutboxDispatcherService`](../src/Ambev.DeveloperEvaluation.ORM/Outbox/OutboxDispatcherService.cs)
 is a `BackgroundService` that:
 
 1. Opens a dedicated `LISTEN outbox_pending` connection on startup
@@ -289,7 +289,7 @@ the broker log to the consumer's processed-events table.
 
 ### Cleanup
 
-[`OutboxCleanupService`](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Outbox/OutboxCleanupService.cs)
+[`OutboxCleanupService`](../src/Ambev.DeveloperEvaluation.ORM/Outbox/OutboxCleanupService.cs)
 deletes processed rows older than its retention window in **5 000-row
 chunks**, each in its own short transaction, so autovacuum keeps up and
 WAL doesn't spike on a busy table.
@@ -331,13 +331,13 @@ throws `DbUpdateConcurrencyException` on a zero-row update.
 chain writes without a re-fetch. `PUT` and `DELETE` honour `If-Match`;
 a stale value yields **412 Precondition Failed**. See the controller
 helpers
-[`SalesController.cs:181`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/SalesController.cs#L181) and
-[`SalesController.cs:188`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/SalesController.cs#L188).
+[`SalesController.cs:181`](../src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/SalesController.cs#L181) and
+[`SalesController.cs:188`](../src/Ambev.DeveloperEvaluation.WebApi/Features/Sales/SalesController.cs#L188).
 
 ### Idempotency-Key
 
 Stripe-style semantics, implemented in
-[`IdempotencyMiddleware.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Middleware/IdempotencyMiddleware.cs):
+[`IdempotencyMiddleware.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Middleware/IdempotencyMiddleware.cs):
 
 - Only `2xx` responses are cached (24h TTL). Retrying with the same
   key after a 4xx re-runs the pipeline.
@@ -355,9 +355,9 @@ Stripe-style semantics, implemented in
 
 ## Read path & 2nd-level cache
 
-`ISaleReadCache` ([`Application/Sales/Common/`](../template/backend/src/Ambev.DeveloperEvaluation.Application/Sales/Common/ISaleReadCache.cs))
+`ISaleReadCache` ([`Application/Sales/Common/`](../src/Ambev.DeveloperEvaluation.Application/Sales/Common/ISaleReadCache.cs))
 sits in front of `GET /api/v1/sales/{id}`. Implementation:
-[`DistributedSaleReadCache.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Application/Common/Caching/DistributedSaleReadCache.cs).
+[`DistributedSaleReadCache.cs`](../src/Ambev.DeveloperEvaluation.Application/Common/Caching/DistributedSaleReadCache.cs).
 
 - Backed by the same `IDistributedCache` (Redis or in-memory fallback).
 - 60-second absolute TTL as a safety net.
@@ -385,15 +385,15 @@ work — see [database.md](database.md#known-future-work).
 
 Mixing both returns 400. Cursors are opaque base64 strings — clients
 should treat them as opaque, never parse. Source:
-[`SaleCursor.cs`](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Repositories/SaleCursor.cs),
-[`SaleRepository.cs`](../template/backend/src/Ambev.DeveloperEvaluation.ORM/Repositories/SaleRepository.cs).
+[`SaleCursor.cs`](../src/Ambev.DeveloperEvaluation.ORM/Repositories/SaleCursor.cs),
+[`SaleRepository.cs`](../src/Ambev.DeveloperEvaluation.ORM/Repositories/SaleRepository.cs).
 
 ---
 
 ## Error contract
 
 A single middleware (
-[`ValidationExceptionMiddleware.cs`](../template/backend/src/Ambev.DeveloperEvaluation.WebApi/Middleware/ValidationExceptionMiddleware.cs)
+[`ValidationExceptionMiddleware.cs`](../src/Ambev.DeveloperEvaluation.WebApi/Middleware/ValidationExceptionMiddleware.cs)
 ) converts well-known exceptions to RFC 7807
 `application/problem+json`. Specific types are matched before generic
 ones; unhandled exceptions become 500 without leaking stack traces
@@ -418,14 +418,14 @@ ones; unhandled exceptions become 500 without leaking stack traces
 | MediatR | `Program.cs:269` | `AddMediatR` over Application + WebApi assemblies |
 | Validation pipeline | `Program.cs:282` | `IPipelineBehavior<,> → ValidationBehavior<,>` from Common |
 | AutoMapper | `Program.cs:267` | `AddAutoMapper` over the same two assemblies |
-| Logging | `Program.cs:37` + [`LoggingExtension.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Common/Logging/LoggingExtension.cs) | Serilog + `Enrich.FromLogContext` + TraceId/SpanId |
+| Logging | `Program.cs:37` + [`LoggingExtension.cs`](../src/Ambev.DeveloperEvaluation.Common/Logging/LoggingExtension.cs) | Serilog + `Enrich.FromLogContext` + TraceId/SpanId |
 | OpenTelemetry | `Program.cs:229` | ASP.NET Core / HTTP client / EF Core instrumentation, OTLP exporter |
-| Health checks | `Program.cs:173` + [`HealthChecksExtension.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Common/HealthChecks/HealthChecksExtension.cs) | `AddDbContextCheck<DefaultContext>` |
+| Health checks | `Program.cs:173` + [`HealthChecksExtension.cs`](../src/Ambev.DeveloperEvaluation.Common/HealthChecks/HealthChecksExtension.cs) | `AddDbContextCheck<DefaultContext>` |
 | Rate limiting | `Program.cs:123` | `Microsoft.AspNetCore.RateLimiting` fixed window |
 | API versioning | `Program.cs:74` | `Asp.Versioning.Mvc` |
-| Auth | `Program.cs:217` + [`AuthenticationExtension.cs`](../template/backend/src/Ambev.DeveloperEvaluation.Common/Security/AuthenticationExtension.cs) | JwtBearer, HS256 ≥ 32 bytes |
+| Auth | `Program.cs:217` + [`AuthenticationExtension.cs`](../src/Ambev.DeveloperEvaluation.Common/Security/AuthenticationExtension.cs) | JwtBearer, HS256 ≥ 32 bytes |
 | Forwarded headers | `Program.cs:293` | `ForwardedHeaders:KnownProxies/KnownNetworks` (CSV) |
-| Composition | `Program.cs:265` + [`DependencyResolver.cs`](../template/backend/src/Ambev.DeveloperEvaluation.IoC/DependencyResolver.cs) | Three `IModuleInitializer`s |
+| Composition | `Program.cs:265` + [`DependencyResolver.cs`](../src/Ambev.DeveloperEvaluation.IoC/DependencyResolver.cs) | Three `IModuleInitializer`s |
 
 ---
 
@@ -440,7 +440,7 @@ keeps that boundary instead of refactoring to vertical slices because:
   noise.
 - All Sales use cases follow the same shape (handler + validator +
   command + DTO + mapping). The layer-and-feature folder layout
-  ([`Application/Sales/CreateSale/`](../template/backend/src/Ambev.DeveloperEvaluation.Application/Sales/CreateSale/),
+  ([`Application/Sales/CreateSale/`](../src/Ambev.DeveloperEvaluation.Application/Sales/CreateSale/),
   etc.) already gives vertical-slice readability without breaking the
   template's contract.
 - The aggregate is the architectural centre of gravity — keeping it

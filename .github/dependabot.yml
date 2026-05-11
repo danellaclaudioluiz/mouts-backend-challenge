@@ -5,7 +5,7 @@
 version: 2
 updates:
   - package-ecosystem: "nuget"
-    directory: "/template/backend"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -41,7 +41,7 @@ updates:
       - "github-actions"
 
   - package-ecosystem: "docker"
-    directory: "/template/backend/src/Ambev.DeveloperEvaluation.WebApi"
+    directory: "/src/Ambev.DeveloperEvaluation.WebApi"
     schedule:
       interval: "weekly"
     labels:
