@@ -79,9 +79,16 @@ public static class HealthChecksExtension
         // and /health/ready additionally hits the database and any other
         // dependency tagged "readiness". /health is the catch-all that
         // returns the full report for ad-hoc inspection.
-        app.MapHealthChecks("/health/live", BuildOptions(app, c => c.Tags.Contains("liveness")));
-        app.MapHealthChecks("/health/ready", BuildOptions(app, c => c.Tags.Contains("readiness")));
-        app.MapHealthChecks("/health", BuildOptions(app, _ => true));
+        // Probes MUST be anonymous so kubernetes / load balancers can hit
+        // them without a token — the global AuthorizationFallbackPolicy
+        // would otherwise turn every probe into 401 and the pod would never
+        // be marked healthy. .AllowAnonymous() opts them out of the fallback.
+        app.MapHealthChecks("/health/live", BuildOptions(app, c => c.Tags.Contains("liveness")))
+            .AllowAnonymous();
+        app.MapHealthChecks("/health/ready", BuildOptions(app, c => c.Tags.Contains("readiness")))
+            .AllowAnonymous();
+        app.MapHealthChecks("/health", BuildOptions(app, _ => true))
+            .AllowAnonymous();
 
         var logger = app.Services.GetRequiredService<ILogger<HealthCheckService>>();
         logger.LogInformation("Health checks enabled at /health, /health/live and /health/ready");

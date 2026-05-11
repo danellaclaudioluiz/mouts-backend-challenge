@@ -4,6 +4,7 @@ using Ambev.DeveloperEvaluation.WebApi.Features.Auth.AuthenticateUserFeature;
 using Asp.Versioning;
 using AutoMapper;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Ambev.DeveloperEvaluation.WebApi.Features.Auth;
@@ -25,7 +26,11 @@ public class AuthController : BaseController
         _mapper = mapper;
     }
 
-    /// <summary>Authenticates a user with their credentials.</summary>
+    /// <summary>
+    /// Authenticates a user with their credentials. Must be anonymous —
+    /// the caller has no token yet.
+    /// </summary>
+    [AllowAnonymous]
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponseWithData<AuthenticateUserResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -38,11 +43,6 @@ public class AuthController : BaseController
         var command = _mapper.Map<AuthenticateUserCommand>(request);
         var response = await _mediator.Send(command, cancellationToken);
 
-        return Ok(new ApiResponseWithData<AuthenticateUserResponse>
-        {
-            Success = true,
-            Message = "User authenticated successfully",
-            Data = _mapper.Map<AuthenticateUserResponse>(response)
-        });
+        return Ok(_mapper.Map<AuthenticateUserResponse>(response));
     }
 }

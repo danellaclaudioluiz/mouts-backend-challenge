@@ -45,6 +45,11 @@ public class Program
             builder.Services.AddControllers().AddJsonOptions(o =>
             {
                 o.JsonSerializerOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Default;
+                // Serialise enums as strings so clients see "Customer" /
+                // "Active" instead of 1 / 1 — round-trips safely across
+                // enum renumberings and is the standard for public APIs.
+                o.JsonSerializerOptions.Converters.Add(
+                    new System.Text.Json.Serialization.JsonStringEnumConverter());
             });
             builder.Services.AddEndpointsApiExplorer();
 
@@ -211,6 +216,19 @@ public class Program
                     if (!string.IsNullOrWhiteSpace(otlpEndpoint))
                         metrics.AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint));
                 });
+
+            // Authorization fallback: every endpoint requires an authenticated
+            // principal unless it explicitly opts out via [AllowAnonymous].
+            // Without this, controllers without an [Authorize] attribute are
+            // PUBLIC — a single forgotten attribute on a new controller would
+            // ship the whole feature unauthenticated.
+            builder.Services.AddAuthorization(options =>
+            {
+                options.FallbackPolicy = new Microsoft.AspNetCore.Authorization
+                    .AuthorizationPolicyBuilder()
+                    .RequireAuthenticatedUser()
+                    .Build();
+            });
 
             builder.RegisterDependencies();
 

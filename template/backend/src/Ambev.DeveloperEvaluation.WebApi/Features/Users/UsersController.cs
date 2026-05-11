@@ -8,6 +8,7 @@ using Ambev.DeveloperEvaluation.WebApi.Features.Users.GetUser;
 using Asp.Versioning;
 using AutoMapper;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Ambev.DeveloperEvaluation.WebApi.Features.Users;
@@ -29,7 +30,12 @@ public class UsersController : BaseController
         _mapper = mapper;
     }
 
-    /// <summary>Creates a new user.</summary>
+    /// <summary>
+    /// Creates a new user. Public on purpose — this is the self-service
+    /// signup endpoint. The handler hard-codes role=Customer and
+    /// status=Active so the request body cannot escalate privileges.
+    /// </summary>
+    [AllowAnonymous]
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponseWithData<CreateUserResponse>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -63,12 +69,7 @@ public class UsersController : BaseController
         var command = _mapper.Map<GetUserCommand>(id);
         var response = await _mediator.Send(command, cancellationToken);
 
-        return Ok(new ApiResponseWithData<GetUserResponse>
-        {
-            Success = true,
-            Message = "User retrieved successfully",
-            Data = _mapper.Map<GetUserResponse>(response)
-        });
+        return Ok(_mapper.Map<GetUserResponse>(response));
     }
 
     /// <summary>Deletes a user by id.</summary>
@@ -81,7 +82,7 @@ public class UsersController : BaseController
         var command = _mapper.Map<DeleteUserCommand>(id);
         await _mediator.Send(command, cancellationToken);
 
-        return Ok(new ApiResponse
+        return ((ControllerBase)this).Ok(new ApiResponse
         {
             Success = true,
             Message = "User deleted successfully"
