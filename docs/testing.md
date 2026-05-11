@@ -200,21 +200,4 @@ posture surfaces that class of regression instantly.
 
 ---
 
-## CI
-
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs three
-jobs on every push and pull request:
-
-| Job | What it does |
-|---|---|
-| `build-test` | `dotnet restore`, `dotnet build -c Release`, `dotnet format --verify-no-changes`, unit suite with Coverlet → Cobertura → Codecov |
-| `integration-test` | Builds and runs the Testcontainers Postgres suite on `ubuntu-latest` (Docker is pre-installed on the runner) |
-| `secret-scan` | `gitleaks/gitleaks-action` on full history with `fetch-depth: 0` |
-
-Failure in any job blocks the PR. `dotnet format --verify-no-changes`
-enforces the `.editorconfig`, so formatting drift is caught at PR
-time, not in code review.
-
----
-
 [← back to README](../README.md)

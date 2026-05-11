@@ -520,10 +520,11 @@ bash scripts/smoke.sh           # BASE=http://localhost:5119 by default
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` runs **six jobs**. PR-blocking jobs trigger
-on every push / pull request; the heavy ones (mutation testing,
-supply-chain) run nightly + on `workflow_dispatch` so they don't slow
-the critical path.
+`.github/workflows/ci.yml` runs **six jobs**. Five fire on every push
+and pull request — including the vulnerability gate (`supply-chain`),
+which must fail fast in PR review. Only `mutation-testing` is gated
+behind nightly + `workflow_dispatch`, because a single Stryker pass
+takes minutes per file.
 
 | Job | Trigger | What it does |
 |---|---|---|

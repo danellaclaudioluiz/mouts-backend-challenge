@@ -6,8 +6,9 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # Nightly 03:00 UTC — Stryker + supply-chain scan run on this trigger
-    # so they don't block PRs.
+    # Nightly 03:00 UTC — Stryker mutation runs on this trigger so it
+    # doesn't block PRs (single Stryker pass takes minutes per file).
+    # supply-chain runs on every push/PR — vuln gate must fail fast.
     - cron: '0 3 * * *'
   workflow_dispatch:
 

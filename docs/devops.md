@@ -231,16 +231,17 @@ without touching code.
 ## Continuous integration
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs **six
-jobs**. The four PR-blocking ones fire on every push and pull request
-to `main`; the two heavy ones (`mutation-testing`, `supply-chain`) run
-nightly + on `workflow_dispatch` so they don't slow the PR loop.
+jobs**. Five fire on every push and pull request to `main` — including
+the vulnerability gate, which must fail fast in PR review. Only
+`mutation-testing` is gated behind nightly + `workflow_dispatch`
+because a single Stryker pass takes minutes per file.
 
 | Job | Trigger | Steps | Purpose |
 |---|---|---|---|
 | `build-test` | push, PR | restore → build Release → `dotnet format --verify-no-changes` → unit tests with Coverlet `XPlat Code Coverage` → upload TRX + coverage artefacts → Codecov | Build + format gate + fast unit suite + coverage publication |
 | `integration-test` | push, PR | restore → build Release → integration test project | Testcontainers Postgres on the ubuntu-latest runner's bundled Docker socket |
 | `migration-validate` | push, PR | install `dotnet-ef` → `dotnet ef migrations script --idempotent --output migrations.sql` → assert non-empty → upload script artifact | Catches a migration that references a model that no longer compiles BEFORE it lands in a deploy |
-| `supply-chain` | nightly + manual | `dotnet list package --vulnerable --include-transitive` (fails on `Critical`) → install `CycloneDX` → emit SBOM artifact | Supply-chain visibility (provenance + vulnerability gate) without slowing PRs |
+| `supply-chain` | push, PR | `dotnet list package --vulnerable --include-transitive` (fails on `Critical`) → install `CycloneDX` → emit SBOM artifact | Provenance + vulnerability gate. Runs on every PR so a Critical CVE in a transitive dep blocks merge instead of waiting for the nightly. |
 | `mutation-testing` | nightly + manual | install `dotnet-stryker` → `dotnet stryker --config-file stryker-config.json` → upload HTML report | Validates the test suite actually catches mutations (Domain + Application; thresholds high 85 / low 70 / break 60 — see [`stryker-config.json`](../stryker-config.json)) |
 | `secret-scan` | push, PR | `gitleaks/gitleaks-action@v2` over full history (`fetch-depth: 0`) | Catches leaked credentials across the entire git history, not just the diff |
 

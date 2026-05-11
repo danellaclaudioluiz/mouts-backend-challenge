@@ -1,4 +1,4 @@
-[Back to README](../README.md)
+[Back to README](../../README.md)
 
 ## Tech Stack
 The Tech Stack is a set of technologies we use to build our Ambev products, which is why we can consider it the heart of our products.
