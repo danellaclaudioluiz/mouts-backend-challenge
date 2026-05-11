@@ -229,13 +229,6 @@ public class Program
                         2. **Authenticate** — `POST /api/v1/Auth`. Returns `token` (8 h JWT) + opaque `refreshToken` (one-shot rotation).
                         3. Click **Authorize** above and paste the raw JWT (no `Bearer ` prefix).
                         4. Exercise the **Sales** endpoints — every mutation is gated by `If-Match` (ETag) and may carry an `Idempotency-Key` (the middleware replays the cached 2xx for 24 h).
-
-                        ### Cross-cutting behaviour
-                        - **JWT bearer auth**: `iss=https://mouts.danellaclaudioluiz.com.br`, `aud=mouts-sales-api`, HS256, 8 h lifetime, `jti` denylisted on refresh-rotation.
-                        - **Optimistic concurrency**: every `Sales` row has a `RowVersion` exposed as `ETag`; `PUT` / `DELETE` / `PATCH` honour `If-Match` and return **412** on mismatch.
-                        - **Idempotency-Key** on `POST /api/v1/Sales`: replay-safe; same key + different body returns **422**.
-                        - **Transactional outbox**: every mutation emits `sale.created.v1` / `sale.modified.v1` / `sale.cancelled.v1` / `sale.item_cancelled.v1` to `OutboxMessages`, drained by a background dispatcher.
-                        - **Rate limit**: auth-strict bucket is 5 req/min/IP on `/api/v1/Auth*`; global budget is 200 req/min/principal.
                         """,
                     Contact = new Microsoft.OpenApi.Models.OpenApiContact
                     {
