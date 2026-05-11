@@ -49,32 +49,32 @@ These business rules define quantity-based discounting tiers and limitations:
 ## Overview
 This section provides a high-level overview of the project and the various skills and competencies it aims to assess for developer candidates. 
 
-See [Overview](/.doc/overview.md)
+See [Overview](/docs/spec/overview.md)
 
 ## Tech Stack
 This section lists the key technologies used in the project, including the backend, testing, frontend, and database components. 
 
-See [Tech Stack](/.doc/tech-stack.md)
+See [Tech Stack](/docs/spec/tech-stack.md)
 
 ## Frameworks
 This section outlines the frameworks and libraries that are leveraged in the project to enhance development productivity and maintainability. 
 
-See [Frameworks](/.doc/frameworks.md)
+See [Frameworks](/docs/spec/frameworks.md)
 
 <!-- 
 ## API Structure
 This section includes links to the detailed documentation for the different API resources:
 - [API General](./docs/general-api.md)
-- [Products API](/.doc/products-api.md)
-- [Carts API](/.doc/carts-api.md)
-- [Users API](/.doc/users-api.md)
-- [Auth API](/.doc/auth-api.md)
+- [Products API](/docs/spec/products-api.md)
+- [Carts API](/docs/spec/carts-api.md)
+- [Users API](/docs/spec/users-api.md)
+- [Auth API](/docs/spec/auth-api.md)
 -->
 
 ## Project Structure
 This section describes the overall structure and organization of the project files and directories. 
 
-See [Project Structure](/.doc/project-structure.md)
+See [Project Structure](/docs/spec/project-structure.md)
 
 ---
 
@@ -98,7 +98,7 @@ public (no `[Authorize]`).
 | `PATCH` | `/api/v1/sales/{id}/items/{itemId}/cancel` | Cancel a single line and recalculate the total. |
 
 The list endpoint follows the conventions in
-[`/.doc/general-api.md`](.doc/general-api.md): `_page`, `_size`, `_order`,
+[`/docs/spec/general-api.md`](docs/spec/general-api.md): `_page`, `_size`, `_order`,
 plus `_minDate` / `_maxDate`, `customerId`, `branchId`, `isCancelled`,
 `saleNumber` (substring with `*`).
 

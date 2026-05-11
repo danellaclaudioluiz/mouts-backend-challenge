@@ -2,7 +2,7 @@
 
 Verbatim copy of the original DeveloperStore evaluation statement. The
 template under [template/backend/](../) ships with its
-own `.doc/` folder (Overview, Tech Stack, Frameworks, Project Structure,
+own `spec/` folder (Overview, Tech Stack, Frameworks, Project Structure,
 General API conventions) — the link list below points to those.
 
 ---
@@ -74,10 +74,10 @@ Discount tiers:
 
 ## Template documentation (preserved from the template)
 
-- [Overview](../.doc/overview.md) — not present in this
+- [Overview](../spec/overview.md) — not present in this
   repo; placeholder kept for completeness
-- [Tech Stack](../.doc/tech-stack.md) — same
-- [Frameworks](../.doc/frameworks.md) — same
-- [Project Structure](../.doc/project-structure.md) — same
-- [General API conventions](.doc/general-api.md) — pagination,
+- [Tech Stack](../spec/tech-stack.md) — same
+- [Frameworks](../spec/frameworks.md) — same
+- [Project Structure](../spec/project-structure.md) — same
+- [General API conventions](spec/general-api.md) — pagination,
   filtering, ordering rules followed by the Sales list endpoint

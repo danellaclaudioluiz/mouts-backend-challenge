@@ -63,7 +63,7 @@ Sources:
 ### Pagination, ordering, filtering
 
 `_`-prefixed query parameters per the template's
-[General API conventions](../.doc/general-api.md):
+[General API conventions](../spec/general-api.md):
 
 | Parameter | Meaning |
 |---|---|
