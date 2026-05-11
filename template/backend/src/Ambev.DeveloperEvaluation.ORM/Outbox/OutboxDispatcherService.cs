@@ -176,15 +176,25 @@ public class OutboxDispatcherService : BackgroundService
         await using var scope = _scopeFactory.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<DefaultContext>();
 
-        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        // EnableRetryOnFailure forbids user-initiated transactions outside
+        // an explicit execution strategy — without this wrapper the
+        // dispatcher's BeginTransactionAsync throws on every tick in prod
+        // ("NpgsqlRetryingExecutionStrategy does not support user-initiated
+        // transactions"). The execution strategy retries the whole closure
+        // as one unit on transient failures.
+        var strategy = context.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
-        var rows = await context.OutboxMessages
-            .FromSqlRaw(ClaimPendingSql)
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
+            var rows = await context.OutboxMessages
+                .FromSqlRaw(ClaimPendingSql)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
 
-        await transaction.CommitAsync(cancellationToken);
-        return rows;
+            await transaction.CommitAsync(cancellationToken);
+            return rows;
+        });
     }
 
     private async Task PersistOutcomesAsync(
