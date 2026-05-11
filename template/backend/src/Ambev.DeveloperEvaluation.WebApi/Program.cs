@@ -25,6 +25,7 @@ public class Program
 {
     public const string DefaultCorsPolicy = "default";
     public const string ApiRateLimitPolicy = "api";
+    public const string AuthStrictRateLimitPolicy = "auth-strict";
 
     public static void Main(string[] args)
     {
@@ -82,7 +83,10 @@ public class Program
             });
 
             // CORS — restrictive by default (ConfiguredOrigins config key);
-            // wide-open only in Development for local Swagger UI / dev front-ends.
+            // Requires an explicit allow-list — appsettings ships "localhost:5173"
+            // / "localhost:4200" for dev. AllowAnyOrigin() is no longer used
+            // anywhere (the previous dev shortcut combined with a leaked-token
+            // scenario was equivalent to a full CORS bypass).
             builder.Services.AddCors(options =>
             {
                 options.AddPolicy(DefaultCorsPolicy, policy =>
@@ -90,11 +94,20 @@ public class Program
                     var origins = builder.Configuration
                         .GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
 
-                    if (builder.Environment.IsDevelopment() && origins.Length == 0)
-                        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+                    if (origins.Length == 0)
+                    {
+                        // Last-resort fallback: deny all cross-origin traffic.
+                        // Misconfiguration is loud (no preflight succeeds) rather
+                        // than silent (everything allowed).
+                        policy.WithOrigins(Array.Empty<string>());
+                    }
                     else
-                        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod()
+                    {
+                        policy.WithOrigins(origins)
+                            .AllowAnyHeader()
+                            .AllowAnyMethod()
                             .AllowCredentials();
+                    }
                 });
             });
 
@@ -123,6 +136,25 @@ public class Program
                         {
                             PermitLimit = permitLimit,
                             Window = TimeSpan.FromSeconds(windowSeconds),
+                            QueueLimit = 0
+                        });
+                });
+
+                // Aggressive policy for /auth: 5 requests / minute / IP.
+                // Brute-forcing a password through the global 100/min would
+                // give an attacker ~6,000 attempts per hour against one
+                // username — the auth-strict bucket caps that at 300/h/IP.
+                options.AddPolicy(AuthStrictRateLimitPolicy, httpContext =>
+                {
+                    var partitionKey =
+                        httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+
+                    return RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey,
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = builder.Configuration.GetValue<int?>("RateLimit:AuthPermitLimit") ?? 5,
+                            Window = TimeSpan.FromSeconds(builder.Configuration.GetValue<int?>("RateLimit:AuthWindowSeconds") ?? 60),
                             QueueLimit = 0
                         });
                 });
@@ -182,7 +214,7 @@ public class Program
                     .EnableSensitiveDataLogging(false),
                 poolSize: 256);
 
-            builder.Services.AddJwtAuthentication(builder.Configuration);
+            builder.Services.AddJwtAuthentication(builder.Configuration, builder.Environment);
 
             // OpenTelemetry — traces + metrics for the request pipeline, EF
             // Core SQL, and outbound HTTP. Exports via OTLP when an endpoint is
@@ -251,26 +283,86 @@ public class Program
 
             var app = builder.Build();
 
-            // Honour X-Forwarded-For / X-Forwarded-Proto when behind a proxy
-            // or load balancer. Without this the rate limiter, logging, and
-            // CORS / scheme-aware redirects all see the proxy's IP instead
-            // of the caller's — so every tenant collapses into a single
-            // rate-limit bucket and a single IP in logs. KnownNetworks and
-            // KnownProxies stay empty by default; tighten via config in a
-            // hardened production deployment.
-            app.UseForwardedHeaders(new ForwardedHeadersOptions
+            // Trust X-Forwarded-* only from configured proxies/networks.
+            // Without an allow-list the API would accept the header from
+            // ANY caller and an attacker could spoof their IP — poisoning
+            // logs, the rate-limit partition key, and any IP-based ACLs
+            // downstream. ForwardedHeaders:KnownProxies / KnownNetworks
+            // (CSV) populate the trust list from config; in dev we add
+            // the loopback ranges so local Kestrel-behind-proxy still works.
+            var forwardedOptions = new ForwardedHeadersOptions
             {
                 ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-            });
+            };
+            forwardedOptions.KnownProxies.Clear();
+            forwardedOptions.KnownNetworks.Clear();
+
+            foreach (var ip in (app.Configuration["ForwardedHeaders:KnownProxies"] ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (System.Net.IPAddress.TryParse(ip, out var parsed))
+                    forwardedOptions.KnownProxies.Add(parsed);
+            }
+            foreach (var range in (app.Configuration["ForwardedHeaders:KnownNetworks"] ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var parts = range.Split('/');
+                if (parts.Length == 2
+                    && System.Net.IPAddress.TryParse(parts[0], out var prefix)
+                    && int.TryParse(parts[1], out var prefixLen))
+                {
+                    forwardedOptions.KnownNetworks.Add(
+                        new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, prefixLen));
+                }
+            }
+
+            if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Test"))
+            {
+                // Loopback (127.0.0.0/8 + ::1/128) so local in-process tests
+                // and curl against Kestrel work without explicit config.
+                forwardedOptions.KnownNetworks.Add(
+                    new Microsoft.AspNetCore.HttpOverrides.IPNetwork(System.Net.IPAddress.Loopback, 8));
+                forwardedOptions.KnownProxies.Add(System.Net.IPAddress.IPv6Loopback);
+            }
+
+            app.UseForwardedHeaders(forwardedOptions);
 
             app.UseMiddleware<ValidationExceptionMiddleware>();
             app.UseMiddleware<IdempotencyMiddleware>();
 
-            if (app.Environment.IsDevelopment())
+            // Swagger ships behind an explicit feature flag (Swagger:Enabled)
+            // — never directly tied to ASPNETCORE_ENVIRONMENT=Development. A
+            // misconfigured prod deploy that inherits the dev env var would
+            // otherwise expose the entire API contract publicly.
+            var swaggerEnabled = app.Configuration.GetValue<bool?>("Swagger:Enabled")
+                ?? app.Environment.IsDevelopment();
+            if (swaggerEnabled)
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
             }
+
+            // HSTS for any non-Development environment. Tells browsers to
+            // refuse plain-HTTP downgrades for the next year, including for
+            // subdomains. Without this the JWT can leak over HTTP on the
+            // first redirect to HTTPS.
+            if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Test"))
+            {
+                app.UseHsts();
+            }
+
+            // Security headers — cheap defence in depth even for a JSON API.
+            // Sniffing-off, frame-deny, no Referer leakage cross-origin, and
+            // a tight CSP because the API never serves HTML.
+            app.Use(async (context, next) =>
+            {
+                var headers = context.Response.Headers;
+                headers.Append("X-Content-Type-Options", "nosniff");
+                headers.Append("X-Frame-Options", "DENY");
+                headers.Append("Referrer-Policy", "no-referrer");
+                headers.Append("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+                await next();
+            });
 
             app.UseHttpsRedirection();
 

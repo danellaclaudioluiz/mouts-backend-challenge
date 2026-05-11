@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
@@ -8,20 +9,36 @@ namespace Ambev.DeveloperEvaluation.Common.Security
 {
     public static class AuthenticationExtension
     {
-        public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
+        public static IServiceCollection AddJwtAuthentication(
+            this IServiceCollection services,
+            IConfiguration configuration,
+            IHostEnvironment environment)
         {
             var secretKey = configuration["Jwt:SecretKey"];
             ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
+            if (secretKey.Length < 32)
+                throw new InvalidOperationException(
+                    "Jwt:SecretKey must be at least 32 bytes — HS256 keys shorter than that are trivially brute-forceable.");
 
             var key = Encoding.UTF8.GetBytes(secretKey);
 
-            // Optional Jwt:Issuer / Jwt:Audience config. When set, the token
-            // must declare matching iss/aud claims — defends against a leaked
-            // signing key being reused to issue tokens for a different
-            // tenant or service. When unset (typical dev), only the signing
-            // key is validated.
             var issuer = configuration["Jwt:Issuer"];
             var audience = configuration["Jwt:Audience"];
+
+            // Outside development, Jwt:Issuer and Jwt:Audience are MANDATORY.
+            // Without them, anyone holding the signing key can mint tokens
+            // accepted by every service that shares it — even ones meant
+            // for a different tenant / audience. Failing fast here beats
+            // a silent "leaked key works everywhere" posture in prod.
+            if (!environment.IsDevelopment() && !environment.IsEnvironment("Test"))
+            {
+                if (string.IsNullOrWhiteSpace(issuer))
+                    throw new InvalidOperationException(
+                        "Jwt:Issuer is required outside Development — set it to the URL of this API so a leaked key can't be reused for another service.");
+                if (string.IsNullOrWhiteSpace(audience))
+                    throw new InvalidOperationException(
+                        "Jwt:Audience is required outside Development — set it to the resource these tokens grant access to.");
+            }
 
             services.AddAuthentication(x =>
             {
@@ -30,7 +47,9 @@ namespace Ambev.DeveloperEvaluation.Common.Security
             })
             .AddJwtBearer(x =>
             {
-                x.RequireHttpsMetadata = false;
+                // Allow plain-HTTP token discovery only in dev — production
+                // must refuse to fetch the JWKS metadata over HTTP.
+                x.RequireHttpsMetadata = !environment.IsDevelopment();
                 x.SaveToken = true;
                 x.TokenValidationParameters = new TokenValidationParameters
                 {
