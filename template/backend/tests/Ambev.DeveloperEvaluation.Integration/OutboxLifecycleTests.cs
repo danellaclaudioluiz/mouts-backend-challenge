@@ -105,20 +105,17 @@ public class OutboxLifecycleTests : IAsyncLifetime
             await ctx.SaveChangesAsync();
         }
 
-        // Replicate the cleanup SQL the OutboxCleanupService runs hourly.
-        // Calling the service directly would mean waiting through its 1–5
-        // minute jitter delay — far too slow for an integration test.
-        // Pinning the test to the exact SQL still catches a regression that
-        // edits the retention window or the WHERE clause.
+        // Exercise the REAL OutboxCleanupService — via the internal
+        // CleanupOnceAsync hook so we don't wait through the production
+        // 1-5 minute startup jitter. Spinning up our own instance avoids
+        // racing with the long-running background copy.
         using (var scope = _factory.Services.CreateScope())
         {
-            var ctx = scope.ServiceProvider.GetRequiredService<DefaultContext>();
-            var cutoff = DateTime.UtcNow - TimeSpan.FromDays(30);
-
-            await ctx.Database.ExecuteSqlRawAsync(@"
-                DELETE FROM ""OutboxMessages""
-                WHERE ""ProcessedAt"" IS NOT NULL AND ""ProcessedAt"" < {0};
-            ", cutoff);
+            var logger = scope.ServiceProvider.GetRequiredService<
+                Microsoft.Extensions.Logging.ILogger<OutboxCleanupService>>();
+            var service = new OutboxCleanupService(_factory.Services.GetRequiredService<
+                Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>(), logger);
+            await service.CleanupOnceAsync();
         }
 
         using (var scope = _factory.Services.CreateScope())

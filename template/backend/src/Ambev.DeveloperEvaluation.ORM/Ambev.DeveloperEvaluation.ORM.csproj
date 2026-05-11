@@ -17,4 +17,10 @@
 	<ItemGroup>
 		<ProjectReference Include="..\Ambev.DeveloperEvaluation.Domain\Ambev.DeveloperEvaluation.Domain.csproj" />
 	</ItemGroup>
+	<ItemGroup>
+		<!-- Lets the integration test assembly call internal helpers (e.g.
+		     OutboxCleanupService.CleanupOnceAsync) without exposing them
+		     on the public surface. -->
+		<InternalsVisibleTo Include="Ambev.DeveloperEvaluation.Integration" />
+	</ItemGroup>
 </Project>

@@ -85,6 +85,15 @@ public class OutboxCleanupService : BackgroundService
     /// </summary>
     private const int MaxChunksPerRun = 200;
 
+    /// <summary>
+    /// Runs a single cleanup pass synchronously. Internal so integration
+    /// tests can exercise the production code path without waiting through
+    /// the service's 1–5 minute startup jitter; tests in the same assembly
+    /// reach this via <c>InternalsVisibleTo</c>.
+    /// </summary>
+    internal Task CleanupOnceAsync(CancellationToken cancellationToken = default) =>
+        CleanupAsync(cancellationToken);
+
     private async Task CleanupAsync(CancellationToken cancellationToken)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
