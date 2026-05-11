@@ -1,5 +1,17 @@
 # Developer Evaluation Project
 
+> 🌐 **Live demo**: <https://mouts.danellaclaudioluiz.com.br>
+> · **Swagger UI**: <https://mouts.danellaclaudioluiz.com.br/swagger>
+> · `GET /health` · `GET /health/ready`
+> · `POST /api/v1/users` (anonymous signup)
+> → `POST /api/v1/auth` (returns `token` + `refreshToken`)
+> → click **Authorize** in Swagger and paste `Bearer <token>` →
+> hit `POST /api/v1/sales`.
+> Hosted on a Hostinger VPS behind nginx + Let's Encrypt — TLS valid,
+> HSTS preload-ready, JWT with `iss=https://mouts.danellaclaudioluiz.com.br`
+> + `aud=mouts-sales-api`, auth-strict rate limit 5/min/IP. Deployment
+> runbook in [docs/deployment.md](docs/deployment.md).
+
 `READ CAREFULLY`
 
 ## Use Case
