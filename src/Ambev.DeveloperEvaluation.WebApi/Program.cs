@@ -133,6 +133,29 @@ public class Program
             builder.Services.AddRateLimiter(options =>
             {
                 options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+                // GlobalLimiter runs on EVERY request before any
+                // policy resolved from endpoint metadata; this lets
+                // [EnableRateLimiting(...)] on individual actions
+                // (e.g. AuthController → auth-strict) compose with
+                // the API-wide budget instead of being overridden by
+                // a route-group RequireRateLimiting that suppresses
+                // attribute discovery.
+                options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+                {
+                    var partitionKey =
+                        httpContext.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                        ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                        ?? "anonymous";
+
+                    return RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey,
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = permitLimit,
+                            Window = TimeSpan.FromSeconds(windowSeconds),
+                            QueueLimit = 0
+                        });
+                });
                 options.AddPolicy(ApiRateLimitPolicy, httpContext =>
                 {
                     var partitionKey =
@@ -416,6 +439,15 @@ public class Program
             app.UseHttpsRedirection();
 
             app.UseCors(DefaultCorsPolicy);
+
+            // Endpoint-level rate-limit policies (`[EnableRateLimiting(...)]`
+            // on AuthController.AuthenticateUser / Refresh) require the
+            // limiter middleware to run AFTER routing — otherwise the
+            // request enters the pipeline before the endpoint is matched
+            // and the attribute metadata is invisible. Manifest as: the
+            // auth-strict 5/min/IP bucket never engages and brute-force
+            // attempts pass straight to the auth handler.
+            app.UseRouting();
             app.UseRateLimiter();
 
             app.UseAuthentication();
@@ -423,7 +455,13 @@ public class Program
 
             app.UseBasicHealthChecks();
 
-            app.MapControllers().RequireRateLimiting(ApiRateLimitPolicy);
+            // GlobalLimiter (registered above) enforces the per-principal API
+            // budget on every request; [EnableRateLimiting] attributes on
+            // specific actions (e.g. auth-strict on AuthController) stack on
+            // top. RequireRateLimiting on the route group was previously
+            // suppressing attribute discovery — see the GlobalLimiter
+            // comment in service registration.
+            app.MapControllers();
 
             app.Run();
         }
