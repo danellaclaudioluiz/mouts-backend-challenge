@@ -124,8 +124,12 @@ namespace Ambev.DeveloperEvaluation.WebApi.Middleware
             }
             catch (Exception ex)
             {
+                // Log the path WITHOUT the query string — query strings can
+                // carry tokens, idempotency keys, or PII that must never
+                // land in a log line. Operators correlate by route, not by
+                // exact URL, so the bare path is enough.
                 _logger.LogError(ex, "Unhandled exception while processing {Method} {Path}",
-                    context.Request.Method, context.Request.Path);
+                    context.Request.Method, context.Request.Path.Value);
 
                 await WriteProblemAsync(context, new ProblemDetails
                 {

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Net.Mime;
 
@@ -107,6 +108,13 @@ public static class HealthChecksExtension
             },
             ResponseWriter = async (context, report) =>
             {
+                // Never echo exception messages — they leak connection
+                // strings, DNS, schema names, and stack-trace fragments to
+                // anonymous callers. Operators see the real detail in the
+                // server log; the probe response is intentionally minimal.
+                var includeDetails = app.Environment.IsDevelopment()
+                    || app.Environment.IsEnvironment("Test");
+
                 var result = new
                 {
                     status = report.Status.ToString(),
@@ -114,8 +122,8 @@ public static class HealthChecksExtension
                     {
                         name = e.Key,
                         status = e.Value.Status.ToString(),
-                        description = e.Value.Description,
-                        errorMessage = e.Value.Exception?.Message,
+                        description = includeDetails ? e.Value.Description : null,
+                        errorMessage = includeDetails ? e.Value.Exception?.Message : null,
                         hostEnvironment = app.Environment.EnvironmentName.ToLowerInvariant()
                     }),
                 };

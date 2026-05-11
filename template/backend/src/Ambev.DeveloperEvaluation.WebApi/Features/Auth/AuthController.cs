@@ -6,6 +6,7 @@ using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Ambev.DeveloperEvaluation.WebApi.Features.Auth;
 
@@ -28,9 +29,11 @@ public class AuthController : BaseController
 
     /// <summary>
     /// Authenticates a user with their credentials. Must be anonymous —
-    /// the caller has no token yet.
+    /// the caller has no token yet. Bound to the auth-strict rate limit
+    /// (5 req/min/IP by default) to slow password brute force.
     /// </summary>
     [AllowAnonymous]
+    [EnableRateLimiting(Program.AuthStrictRateLimitPolicy)]
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponseWithData<AuthenticateUserResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

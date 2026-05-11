@@ -90,6 +90,14 @@ public static class LoggingExtension
                     .WriteTo.File(
                         "logs/log-.txt",
                         rollingInterval: RollingInterval.Day,
+                        // Cap rolling files at 14 days — without this Serilog
+                        // keeps every daily log forever and the container's
+                        // ephemeral FS fills up. 14d covers a typical
+                        // incident-investigation window; ship to a real
+                        // sink (Loki/Splunk) for longer retention.
+                        retainedFileCountLimit: 14,
+                        fileSizeLimitBytes: 50L * 1024 * 1024,
+                        rollOnFileSizeLimit: true,
                         outputTemplate: OutputTemplate);
             }
         });
