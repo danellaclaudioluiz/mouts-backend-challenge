@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Ambev.DeveloperEvaluation.ORM;
+using FluentAssertions;
 using Ambev.DeveloperEvaluation.ORM.Outbox;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -59,16 +60,26 @@ public sealed class OutboxAsserter
 
     /// <summary>
     /// Asserts that exactly one outbox row matches <paramref name="eventTypeAlias"/>
-    /// and deserialises its Payload into <typeparamref name="T"/>. Lets a test
-    /// move past "the alias is there" and actually check that the SaleId,
-    /// TotalAmount, etc. on the wire match what the aggregate produced.
+    /// and deserialises its Payload's <c>data</c> envelope field into
+    /// <typeparamref name="T"/>. The producer wraps every event as
+    /// <c>{ eventId, eventType, occurredAt, data: { … } }</c> so downstream
+    /// consumers have a stable id for deduplication (at-least-once); tests
+    /// reach into <c>data</c> to assert the event-specific fields.
     /// </summary>
     public async Task<T> AssertSinglePayloadAsync<T>(string eventTypeAlias) where T : class
     {
         var row = await AssertSingleAsync(eventTypeAlias);
-        var payload = JsonSerializer.Deserialize<T>(row.Payload, PayloadJsonOptions);
+        using var doc = JsonDocument.Parse(row.Payload);
+
+        doc.RootElement.TryGetProperty("eventId", out var eventId).Should().BeTrue(
+            $"the envelope for '{eventTypeAlias}' must carry an eventId for consumer deduplication (raw: {row.Payload})");
+        eventId.GetGuid().Should().NotBeEmpty();
+        doc.RootElement.TryGetProperty("data", out var data).Should().BeTrue(
+            $"the envelope for '{eventTypeAlias}' must carry the event under 'data' (raw: {row.Payload})");
+
+        var payload = JsonSerializer.Deserialize<T>(data.GetRawText(), PayloadJsonOptions);
         payload.Should().NotBeNull(
-            $"the outbox row for '{eventTypeAlias}' must hold a deserialisable {typeof(T).Name} payload (raw: {row.Payload})");
+            $"the outbox envelope.data for '{eventTypeAlias}' must hold a deserialisable {typeof(T).Name} payload (raw: {row.Payload})");
         return payload!;
     }
 }

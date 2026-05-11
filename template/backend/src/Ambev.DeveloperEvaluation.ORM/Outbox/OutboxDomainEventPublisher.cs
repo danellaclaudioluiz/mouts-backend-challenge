@@ -42,11 +42,30 @@ public class OutboxDomainEventPublisher : IDomainEventPublisher
     public Task PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
     {
         var clrType = domainEvent.GetType();
+        var alias = ResolveAlias(clrType);
+        var messageId = Guid.NewGuid();
+
+        // Wrap the event in a CloudEvents-flavoured envelope so the
+        // payload itself carries an eventId, eventType, occurredAt — the
+        // exact handles a downstream consumer needs to deduplicate
+        // (at-least-once delivery) and to route by type without inspecting
+        // the EventType column. The 'data' field uses the CONCRETE runtime
+        // type (clrType) — serialising via the IDomainEvent interface
+        // would emit only the interface members and drop SaleId / Totals.
+        var data = JsonSerializer.SerializeToElement(domainEvent, clrType, JsonOptions);
+        var envelope = new
+        {
+            eventId = messageId,
+            eventType = alias,
+            occurredAt = domainEvent.OccurredAt,
+            data
+        };
+
         var message = new OutboxMessage
         {
-            Id = Guid.NewGuid(),
-            EventType = ResolveAlias(clrType),
-            Payload = JsonSerializer.Serialize(domainEvent, clrType, JsonOptions),
+            Id = messageId,
+            EventType = alias,
+            Payload = JsonSerializer.Serialize(envelope, JsonOptions),
             OccurredAt = domainEvent.OccurredAt,
             Attempts = 0
         };
