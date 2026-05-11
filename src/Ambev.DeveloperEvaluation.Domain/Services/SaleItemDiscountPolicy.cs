@@ -1,4 +1,5 @@
 using Ambev.DeveloperEvaluation.Domain.Exceptions;
+using Ambev.DeveloperEvaluation.Domain.ValueObjects;
 
 namespace Ambev.DeveloperEvaluation.Domain.Services;
 
@@ -36,27 +37,40 @@ public static class SaleItemDiscountPolicy
     /// </exception>
     public static (decimal Discount, decimal Total) Calculate(int quantity, decimal unitPrice)
     {
+        // Preserve the primitive overload's historical error wording —
+        // existing handler/test contracts depend on it — and only then
+        // delegate to the VO-typed core for the actual algebra.
         if (quantity < 1)
             throw new DomainException("Sale item quantity must be at least 1.");
-
         if (quantity > MaxQuantityPerProduct)
             throw new DomainException(
                 $"Cannot sell more than {MaxQuantityPerProduct} identical items.");
-
         if (unitPrice <= 0m)
             throw new DomainException("Sale item unit price must be greater than zero.");
 
+        var (discount, total) = Calculate(Quantity.From(quantity), Money.From(unitPrice));
+        return (discount.Amount, total.Amount);
+    }
+
+    /// <summary>
+    /// Value-object-typed overload. Preferred entry point: the input
+    /// invariants (qty &gt;= 1, qty &lt;= 20, price &gt;= 0) are
+    /// enforced by the VO constructors themselves, so this method only
+    /// has to encode the tier formula.
+    /// </summary>
+    public static (Money Discount, Money Total) Calculate(Quantity quantity, Money unitPrice)
+    {
         var rate = DiscountRateFor(quantity);
-        var gross = quantity * unitPrice;
-        var discount = decimal.Round(gross * rate, 2, MidpointRounding.AwayFromZero);
+        var gross = unitPrice * quantity;
+        var discount = rate.ApplyTo(gross);
         var total = gross - discount;
         return (discount, total);
     }
 
-    private static decimal DiscountRateFor(int quantity) => quantity switch
+    private static Percentage DiscountRateFor(int quantity) => quantity switch
     {
-        >= TwentyPercentTierMinQuantity => 0.20m,
-        >= TenPercentTierMinQuantity => 0.10m,
-        _ => 0m
+        >= TwentyPercentTierMinQuantity => Percentage.FromPercent(20),
+        >= TenPercentTierMinQuantity => Percentage.FromPercent(10),
+        _ => Percentage.Zero
     };
 }
