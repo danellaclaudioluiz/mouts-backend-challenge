@@ -21,13 +21,17 @@ range advertised on the `api-supported-versions` response header).
 
 ### Authentication
 
-- JWT Bearer (`Authorization: Bearer <token>`). Issued by
-  `POST /api/v1/auth`.
+- JWT Bearer (`Authorization: Bearer <token>`). Access tokens are
+  issued by `POST /api/v1/auth` and rotated at
+  `POST /api/v1/auth/refresh` (one-shot refresh token; prior
+  access-token `jti` is denylisted at rotation — see
+  [security.md → JWT lifecycle](security.md#jwt-lifecycle)).
 - **Every endpoint is authenticated by default** via
-  `AuthorizationFallbackPolicy = RequireAuthenticatedUser` —
-  `[AllowAnonymous]` is opt-in for the four public endpoints.
-- The three anonymous endpoints are `POST /api/v1/auth`,
-  `POST /api/v1/users`, and the three `/health/*` probes.
+  `AuthorizationFallbackPolicy = RequireAuthenticatedUser`;
+  `[AllowAnonymous]` is opt-in for the few public endpoints below.
+- Anonymous endpoints: `POST /api/v1/auth`,
+  `POST /api/v1/auth/refresh`, `POST /api/v1/users`, and the three
+  `/health/*` probes.
 - Token signing: HS256, ≥ 32 bytes. `Jwt:Issuer` and `Jwt:Audience` are
   mandatory outside Development.
 - Full posture: [security.md](security.md).
@@ -102,8 +106,9 @@ All errors are RFC 7807 problem details:
 
 | HTTP | Source |
 |---|---|
-| 200 | success on read / cancel / item-cancel / delete |
+| 200 | success on read / cancel / item-cancel |
 | 201 | `POST /api/v1/sales`, `POST /api/v1/users` |
+| 204 | success on `DELETE /api/v1/sales/{id}` (no body) |
 | 400 | `ValidationException`, `DomainException` |
 | 401 | missing or invalid bearer token |
 | 404 | `ResourceNotFoundException` |

@@ -75,10 +75,13 @@ is a standard ASP.NET multi-stage build, three stages:
 `.dockerignore` keeps `bin/`, `obj/`, secrets, and the `tests/` folder
 out of the build context — a `docker build` is fast and reproducible.
 
-The container runs as the `app` user out of the base image; no
-unnecessary capabilities are added. Read-only root FS / `cap_drop:
-ALL` is a deployment-time hardening not enforced by the compose file
-(documented as future work).
+The container runs as the `app` user out of the base image. The
+compose file enforces `read_only: true`, `cap_drop: [ALL]`, and
+`security_opt: no-new-privileges:true` on the WebApi and Redis
+services; Postgres drops every capability except the five it needs to
+chown its data directory and drop from root at startup
+(`CHOWN`, `DAC_READ_SEARCH`, `FOWNER`, `SETGID`, `SETUID`). See
+[`docker-compose.yml`](../docker-compose.yml).
 
 ### Compose topology
 

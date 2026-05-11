@@ -491,12 +491,11 @@ the bottleneck is the connection pool tuned via the connection string
 
 - A real broker. Stand-in is the structured log; seam is
   `DeliverAsync`.
-- Refresh tokens / JWT revocation / `jti` denylist. Accepted trade-off
-  (8h lifetime, rotate `JWT_SECRET_KEY` to invalidate fleet-wide). See
-  [security.md](security.md#jwt-trade-offs).
 - HIBP / breach-list password screening. Roadmap.
-- Read-only filesystem / `cap_drop` for the container. Compose hardens
-  secrets; deeper container hardening is a deployment-time concern.
+- Refresh-token reuse detection (auto-revoke whole chain on replay).
+  One-shot rotation + `jti` denylist are in place — see
+  [security.md → JWT lifecycle](security.md#jwt-lifecycle); the
+  detection step is a v1.1 enhancement.
 - A separate Read DB / CQRS materialised view. The 2nd-level cache
   covers `GetById`; list-side reads are fast enough at expected scale
   given the partial indexes.

@@ -85,21 +85,31 @@ Every endpoint is authenticated unless it explicitly opts out via
   high-sensitivity / regulated APIs. Each +1 doubles cost.
 - No custom crypto; no plain SHA / no MD5; no rolling-your-own salt.
 
-### JWT trade-offs
+### JWT lifecycle
 
-The JWT lifetime is **8 hours** with **no refresh, no `jti` claim, no
-denylist**.
+Access tokens are 8-hour JWTs carrying a `jti` claim. A long-lived
+opaque refresh token (256-bit RNG, persisted only as SHA-256) trades
+in at `POST /auth/refresh` for a fresh access JWT and a fresh refresh
+token. Rotation is **one-shot**: the consumed refresh row is revoked
+inside the same transaction that issues its replacement, and the prior
+access token's `jti` is added to an `IDistributedCache`-backed
+denylist (Redis in prod, in-memory in dev/test) with TTL equal to its
+remaining lifetime. `JwtBearer.OnTokenValidated` consults that
+denylist on every authenticated request.
 
-| Position | Why this was accepted |
+| Control | How it's enforced |
 |---|---|
-| Refresh tokens — deferred | Adds a stateful side (refresh-token store, rotation, reuse detection) without buying much for an internal-facing API. Roadmap v1.1. |
-| `jti` / denylist — deferred | The denylist needs the same Redis or DB write path on every authn'd request. Caps p99 latency. Trade-off was made consciously. |
-| Lifetime ≤ 8h | Bounds the blast radius of a stolen token. |
-| Rotate by re-issuing `JWT_SECRET_KEY` | Every outstanding token becomes invalid immediately. |
+| Access token lifetime ≤ 8h | Bounds the blast radius of a stolen token even if refresh is also stolen. |
+| `jti` denylist on rotation | Refreshing a session immediately invalidates the prior access token instead of waiting for its natural expiry. |
+| One-shot refresh rotation | A replayed refresh token hits the revoked-row check and 401s — and can be wired in v1.1 to revoke the whole user's refresh chain as a compromise signal. |
+| SHA-256 storage for refresh tokens | A full DB dump reveals nothing usable for authentication. |
+| Secret-key rotation as fail-safe | Re-issuing `JWT__SECRET_KEY` invalidates every outstanding access token in seconds (next signature check fails). |
 
-**Operational runbook entry**: if a token leaks, rotate
-`JWT__SECRET_KEY` and redeploy — the entire fleet invalidates within
-seconds (next signature check fails).
+**Operational runbook entry**: if a key leaks, rotate
+`JWT__SECRET_KEY` and redeploy — the entire fleet invalidates
+immediately. If a single user is compromised, future work (v1.1) is to
+wire reuse-detection on the refresh chain so any reuse revokes all of
+that user's tokens.
 
 ---
 
@@ -297,10 +307,9 @@ return nothing. The full procedure is documented in
 
 | Deferred control | Mitigation today | Bookmark |
 |---|---|---|
-| Refresh tokens / `jti` / denylist | 8 h lifetime + `JWT_SECRET_KEY` rotation invalidates the fleet. | Roadmap v1.1 |
+| Refresh-token reuse detection (auto-revoke chain) | One-shot rotation already 401s a replay; manual revocation of the user's refresh chain is the v1.1 step. | Roadmap v1.1 |
 | HIBP (haveibeenpwned) password screening | Strong password policy in validators + BCrypt-12. | Roadmap v1.1 |
 | Stronger Idempotency-Key in-flight protection (Redis `SET NX`) | The current best-effort GET-then-SET narrows the window; the unique index on `SaleNumber` is the source of truth and closes it for the create path. | Roadmap |
-| Read-only container FS, `cap_drop: ALL` | Container runs as non-root; secrets externalised. | Deployment-time hardening |
 | External pen test | The two-pass internal audit + integration coverage matrix is the current bar. | Pre-production gate |
 
 ---
