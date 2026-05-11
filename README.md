@@ -307,6 +307,24 @@ The schema and connection setup are tuned for production-style load:
   unique index is still the source of truth — a concurrent insert that
   slips past returns 409 from the middleware.
 
+### Known issues (documented gaps)
+
+- **PUT with new SaleItem rows occasionally raises 409 Concurrent
+  modification.** The same-product diff path (qty / price changes on
+  existing items) works correctly. A PUT that introduces new
+  `productId`s or replaces the entire items list hits a spurious
+  optimistic-concurrency exception inside `SaveChanges` — the BEFORE
+  UPDATE trigger that maintains `Sales.RowVersion` appears to race with
+  EF Core's RowVersion-based concurrency check when SaleItem mutations
+  interleave with the Sale UPDATE in the same transaction. Tracked as
+  `MissingScenarioTests.UpdateSale_ReplacesAllItems_Skipped`. Workaround
+  for clients: replace items via separate `PATCH /items/{itemId}/cancel`
+  + `POST /api/v1/sales` (new sale) calls.
+- **Outbox dispatcher publishes to a structured log only.** A real
+  broker (Kafka / RabbitMQ / SNS) is out of scope for the challenge;
+  the dispatcher's `DeliverAsync` ships a single, swappable seam an
+  operator can replace with `IDomainEventBroker` for production.
+
 ### Known future work (not in scope for the challenge)
 
 - **`pg_trgm` GIN index on `OutboxMessages.Payload`** — only worth
