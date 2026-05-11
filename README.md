@@ -156,6 +156,52 @@ rows or downstream consumers:
 | `SaleCancelledEvent` | `sale.cancelled.v1` |
 | `ItemCancelledEvent` | `sale.item_cancelled.v1` |
 
+**Wire envelope.** Each `OutboxMessages.Payload` is a CloudEvents-flavoured
+envelope, not the bare event:
+
+```json
+{
+  "eventId":    "<uuid — same as OutboxMessages.Id>",
+  "eventType":  "sale.created.v1",
+  "occurredAt": "2026-05-10T23:11:50.987542Z",
+  "data":       { "saleId": "…", "saleNumber": "…", "totalAmount": 45.00, … }
+}
+```
+
+**At-least-once contract.** A dispatcher that crashes between successful
+publish and the `ProcessedAt = now()` write will redeliver the message on
+the next tick. Consumers MUST deduplicate by `eventId` — every Kafka /
+RabbitMQ / SNS subscriber on the receiving end is expected to keep a
+short-window seen-set of recent `eventId`s (Redis SET with TTL, or a
+window table) and discard repeats. Without that, downstream side-effects
+will fire twice on every dispatcher hiccup. The `eventId` is also the
+correlation handle for ops: a single id traces a message from
+`OutboxMessages` to the broker log to the consumer's processed-events
+table.
+
+**Auto-migration & multi-pod rollouts.** The app ships migrations via
+`dotnet ef database update` at deploy time — `Database.MigrateAsync()` is
+NOT called at startup. If a future iteration adds it, wrap the call in a
+Postgres advisory lock so concurrent rolling-deploy pods do not race the
+schema:
+
+```csharp
+await using (var conn = new NpgsqlConnection(connString))
+{
+    await conn.OpenAsync();
+    // pg_advisory_lock blocks (cooperatively) until any other holder
+    // releases — exactly one pod runs MigrateAsync, the rest wait, see
+    // the schema is up-to-date, and return cleanly.
+    await using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "SELECT pg_advisory_lock(8945312094);";
+        await cmd.ExecuteNonQueryAsync();
+    }
+    await context.Database.MigrateAsync();
+    // Advisory locks are released by session close (await using above).
+}
+```
+
 ### Concurrency, idempotency, observability
 
 - **API versioning**: routes live at `/api/v{version}/…` via
@@ -185,7 +231,30 @@ rows or downstream consumers:
   `Cors:AllowedOrigins`.
 - **Rate limiting**: 100 requests per minute per principal (claim id
   first, IP fallback) on the controller surface (fixed-window). Returns
-  429 when exhausted.
+  429 when exhausted. A separate `auth-strict` policy caps `POST /auth`
+  at 5 req/min/IP to slow password brute-force.
+- **Authorization**: every endpoint requires an authenticated user via
+  `AuthorizationFallbackPolicy = RequireAuthenticatedUser`. Only
+  `POST /auth` (login), `POST /users` (self-service signup), and the
+  `/health/*` probes opt out via `[AllowAnonymous]`. Self-service signup
+  hard-codes `role=Customer` + `status=Active` in the handler so a
+  smuggled-in `role: "Admin"` body field cannot escalate privileges.
+- **JWT hardening**: HS256 with a ≥32-byte signing key. `Jwt:Issuer`
+  and `Jwt:Audience` are mandatory outside Development so a leaked key
+  in one service cannot mint tokens accepted by another.
+- **Transport hardening**: `RequireHttpsMetadata = !IsDevelopment()`,
+  `UseHsts()` outside dev (1y, includeSubDomains), security headers
+  middleware adds `X-Content-Type-Options: nosniff`, `X-Frame-Options:
+  DENY`, `Referrer-Policy: no-referrer`, and a `default-src 'none'` CSP
+  (JSON API never serves HTML).
+- **Login timing & enumeration**: login responses use a single
+  "Invalid credentials" message and run BCrypt verification even when
+  the email is unknown (constant-time path via a frozen dummy hash) so
+  response latency does not double as a user-enumeration oracle.
+- **Forwarded headers** (`X-Forwarded-For`, `X-Forwarded-Proto`) are
+  honoured **only** from configured `ForwardedHeaders:KnownProxies` /
+  `KnownNetworks` so an attacker cannot spoof their IP to poison logs
+  or the rate-limit partition. Loopback is allowed in Development/Test.
 - **Structured logging** via Serilog enriched with TraceId/SpanId so
   log lines join their OpenTelemetry traces.
 - **OpenTelemetry** traces (ASP.NET Core, HTTP client, EF Core) and
@@ -274,10 +343,24 @@ Swagger UI: `https://localhost:8081/swagger`.
 
 #### Configuration
 
-The default `appsettings.json` ships with **empty** `ConnectionStrings:DefaultConnection`
-and `Jwt:SecretKey` — the app fails fast on startup if either is missing.
-For local development, `appsettings.Development.json` already contains a
-working Postgres connection string and a clearly-marked dev-only JWT key.
+The default `appsettings.json` ships with **empty** secrets — the app
+fails fast on startup if `ConnectionStrings:DefaultConnection` or
+`Jwt:SecretKey` is missing. Secrets are externalised; pick one source:
+
+- **`docker compose up`** — copy `template/backend/.env.example` to
+  `.env` (gitignored), fill in your values, and `docker compose up`.
+  Compose refuses to start if any required variable is unset.
+- **`dotnet user-secrets`** — for `dotnet run` on the host. Set with
+  `dotnet user-secrets set ConnectionStrings:DefaultConnection "..."`.
+- **Environment variables** — `ConnectionStrings__DefaultConnection`,
+  `Jwt__SecretKey`, `Jwt__Issuer`, `Jwt__Audience`,
+  `Swagger__Enabled`, `ForwardedHeaders__KnownProxies`,
+  `ForwardedHeaders__KnownNetworks`, `RateLimit__PermitLimit`,
+  `RateLimit__WindowSeconds`, `RateLimit__AuthPermitLimit`.
+
+In production, `Jwt:Issuer` and `Jwt:Audience` are mandatory — startup
+fails with a clear error if either is unset, preventing a leaked
+signing key from being reused across services.
 
 For production, set both via environment variables:
 
