@@ -27,7 +27,11 @@ services:
       # killing the dev override.
       - ASPNETCORE_HTTPS_PORTS=
       - ASPNETCORE_HTTP_PORTS=8080
-    ports:
+    # !override replaces the base compose's list outright (which had
+    # bare "8080"/"8081" — causing docker to allocate random host
+    # ports). With this tag the container is reachable only via the
+    # loopback bind, and nginx is the single ingress.
+    ports: !override
       - "127.0.0.1:8080:8080"
     depends_on:
       migrate:
@@ -37,13 +41,16 @@ services:
     restart: unless-stopped
 
   ambev.developerevaluation.database:
-    # Drop the dev port publication (5432). The DB is only reachable
-    # from the WebApi container via the compose bridge in production.
-    ports: []
+    # !override replaces the base compose's port list (which had a
+    # bare "5432" → docker auto-allocates a random host port). With
+    # this tag the DB is only reachable from inside the compose bridge.
+    ports: !override []
     restart: unless-stopped
 
   ambev.developerevaluation.cache:
-    ports: []
+    # Same story as database — replace the inherited "6379" so the
+    # cache is only reachable from inside the compose bridge.
+    ports: !override []
     # The base compose ships read_only:true + cap_drop:ALL, but the
     # Redis docker-entrypoint.sh needs to `chown redis:redis /data`,
     # then drop privileges from root → redis via gosu. That requires
